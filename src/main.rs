@@ -12,6 +12,7 @@ use evaluation::Eval;
 use lexing::Lexer;
 use parsing::Expr;
 
+pub mod compilation;
 pub mod evaluation;
 pub mod lexing;
 pub mod parsing;

@@ -7,9 +7,9 @@ pub trait Eval {
 impl Eval for Expr {
     fn eval(&self) -> i64 {
         match self {
+            Expr::Grouping { expr, .. } => expr.eval(),
             Expr::Int(_, val) => *val,
             Expr::BinaryOperation(bin_op) => bin_op.eval(),
-            Expr::Grouping { expr, .. } => expr.eval(),
         }
     }
 }

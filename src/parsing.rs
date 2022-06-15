@@ -7,13 +7,13 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Int(Span, i64),
-    BinaryOperation(Box<BinaryOperation>),
     Grouping {
         left_paren: Span,
         expr: Box<Expr>,
         right_paren: Span,
     },
+    Int(Span, i64),
+    BinaryOperation(Box<BinaryOperation>),
 }
 
 #[derive(Debug, Clone)]
@@ -66,10 +66,6 @@ fn parse_factors(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
 fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
     match input.next() {
         Some(Token {
-            span,
-            kind: TokenKind::Int(val),
-        }) => Expr::Int(span, val),
-        Some(Token {
             span: left_paren,
             kind: TokenKind::LeftParen,
         }) => {
@@ -81,6 +77,10 @@ fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
                 right_paren,
             }
         }
+        Some(Token {
+            span,
+            kind: TokenKind::Int(val),
+        }) => Expr::Int(span, val),
         _ => todo!(),
     }
 }
