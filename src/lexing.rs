@@ -10,7 +10,7 @@ pub struct Token {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TokenKind {
-    Int(usize),
+    Int(i64),
     Plus,
     Asterix,
     LeftParen,
@@ -36,14 +36,14 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             ')' => Some(TokenKind::RightParen),
             ws if ws.is_whitespace() => None,
             d @ '0'..='9' => {
-                let mut v = d as usize - '0' as usize;
+                let mut v = d as i64 - '0' as i64;
 
                 // FIXME: handle overflows
                 while let Some(d @ ('0'..='9' | '_')) = self.peek_char() {
                     self.next_char();
                     if matches!(d, '0'..='9') {
                         v *= 10;
-                        v += d as usize - '0' as usize;
+                        v += d as i64 - '0' as i64;
                     }
                 }
 

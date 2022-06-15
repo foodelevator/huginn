@@ -7,7 +7,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Int(Span, usize),
+    Int(Span, i64),
     BinaryOperation(Box<BinaryOperation>),
     Grouping {
         left_paren: Span,
