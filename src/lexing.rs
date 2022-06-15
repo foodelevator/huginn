@@ -27,7 +27,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Self { input, index: 0 }
     }
 
-    pub fn advance(&mut self) -> Option<Token> {
+    fn advance(&mut self) -> Option<Token> {
         let start = self.index;
         let kind = match self.next_char()? {
             '+' => Some(TokenKind::Plus),

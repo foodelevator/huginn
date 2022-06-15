@@ -1,5 +1,6 @@
 #![feature(box_patterns, assert_matches)]
 
+use std::error::Error;
 use std::io::BufRead;
 use std::{
     io::{stdin, stdout, Write},
@@ -7,9 +8,11 @@ use std::{
     process,
 };
 
-use crate::lexing::Lexer;
-use crate::parsing::Expr;
+use evaluation::Eval;
+use lexing::Lexer;
+use parsing::Expr;
 
+pub mod evaluation;
 pub mod lexing;
 pub mod parsing;
 
@@ -19,24 +22,29 @@ mod tests;
 pub type Span = Range<usize>;
 
 fn main() {
+    if let Err(err) = repl() {
+        eprintln!("{}", err);
+        process::exit(1);
+    }
+}
+
+fn repl() -> Result<(), Box<dyn Error>> {
     let mut line = String::new();
     loop {
         line.clear();
         print!("\x1b[35mλ\x1b[0m ");
-        let _ = stdout().flush();
-        if let Err(err) = stdin().lock().read_line(&mut line) {
-            eprintln!("Error reading stdin: {}", err);
-            process::exit(1);
-        }
+        stdout().flush()?;
+        stdin().lock().read_line(&mut line)?;
         if line.is_empty() {
             println!();
-            break;
+            break Ok(());
         }
         let mut lexer = Lexer::new(line.chars().peekable()).peekable();
         let expr = Expr::parse(&mut lexer);
         if let Some(token) = lexer.peek() {
             println!("Warning: expected EOF, found {:?}", token);
         }
-        println!("{:#?}", expr);
+        let val = expr.eval();
+        println!("{}", val);
     }
 }

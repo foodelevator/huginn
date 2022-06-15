@@ -5,24 +5,29 @@ use crate::{
     Span,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Int(Span, usize),
-    Plus {
-        lhs: Box<Expr>,
-        plus: Span,
-        rhs: Box<Expr>,
-    },
-    Times {
-        lhs: Box<Expr>,
-        asterix: Span,
-        rhs: Box<Expr>,
-    },
+    BinaryOperation(Box<BinaryOperation>),
     Grouping {
         left_paren: Span,
         expr: Box<Expr>,
         right_paren: Span,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryOperation {
+    pub lhs: Expr,
+    pub rhs: Expr,
+    pub op_span: Span,
+    pub operator: BinaryOperator,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryOperator {
+    Plus,
+    Times,
 }
 
 impl Expr {
@@ -45,7 +50,7 @@ fn parse_terms(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
         input,
         parse_factors,
         TokenKind::Plus,
-        |lhs, plus, rhs| Expr::Plus { lhs, plus, rhs },
+        BinaryOperator::Plus,
     )
 }
 
@@ -54,7 +59,7 @@ fn parse_factors(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
         input,
         parse_innermost,
         TokenKind::Asterix,
-        |lhs, asterix, rhs| Expr::Times { lhs, asterix, rhs },
+        BinaryOperator::Times,
     )
 }
 
@@ -87,16 +92,21 @@ fn parse_left_associative_binary_operation<
     input: &mut Peekable<I>,
     inner: F,
     middle: TokenKind,
-    combine: impl Fn(Box<Expr>, Span, Box<Expr>) -> Expr,
+    operator: BinaryOperator,
 ) -> Expr {
     let mut lhs = inner(input);
     while let Some(Token { span, kind }) = input.peek() {
         if *kind != middle {
             break;
         }
-        let span = span.clone();
+        let op_span = span.clone();
         input.next();
-        lhs = combine(Box::new(lhs), span, Box::new(inner(input)));
+        lhs = Expr::BinaryOperation(Box::new(BinaryOperation {
+            lhs,
+            rhs: inner(input),
+            op_span,
+            operator,
+        }));
     }
     lhs
 }
