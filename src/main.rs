@@ -8,10 +8,11 @@ use std::{
     process,
 };
 
-use evaluation::Eval;
+use compilation::Compilation;
 use lexing::Lexer;
 use parsing::Expr;
 
+pub mod codegen;
 pub mod compilation;
 pub mod evaluation;
 pub mod lexing;
@@ -45,7 +46,7 @@ fn repl() -> Result<(), Box<dyn Error>> {
         if let Some(token) = lexer.peek() {
             println!("Warning: expected EOF, found {:?}", token);
         }
-        let val = expr.eval();
-        println!("{}", val);
+        let instrs = Compilation::compile(&expr);
+        codegen::run(&instrs);
     }
 }
