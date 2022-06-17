@@ -47,6 +47,6 @@ fn repl() -> Result<(), Box<dyn Error>> {
             println!("Warning: expected EOF, found {:?}", token);
         }
         let instrs = Compilation::compile(&expr);
-        codegen::run(&instrs);
+        codegen::output_to_file(&instrs);
     }
 }

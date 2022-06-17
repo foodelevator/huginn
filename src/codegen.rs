@@ -1,42 +1,46 @@
 use cranelift::{
-    codegen::{ir::Function, Context},
-    prelude::*,
+    codegen::{
+        ir::{types, AbiParam, ExternalName, Function, InstBuilder, Signature, Value},
+        isa, settings, Context,
+    },
+    frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
 };
+use cranelift_module::{Linkage, Module};
+use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::{compilation::Instr, parsing::BinaryOperator};
 
-pub fn run(instrs: &[Instr]) {
-    let func = gen(instrs);
-
-    let mut ctx = Context::for_function(func);
-
-    let builder = isa::lookup_by_name("x86_64-linux").unwrap();
-    let target_isa = builder
+pub fn output_to_file(instrs: &[Instr]) {
+    let target_isa = isa::lookup_by_name("x86_64-linux")
+        .unwrap()
         .finish(settings::Flags::new(settings::builder()))
         .unwrap();
 
-    let mut output = vec![];
-    ctx.compile_and_emit(&*target_isa, &mut output).unwrap();
+    let func = gen(instrs);
 
-    let m = mmap::MemoryMap::new(
-        output.len(),
-        &[mmap::MapOption::MapWritable, mmap::MapOption::MapExecutable],
-    )
-    .unwrap();
-    let d = unsafe { std::slice::from_raw_parts_mut(m.data(), m.len()) };
+    let mut obj_mod = ObjectModule::new(
+        ObjectBuilder::new(
+            target_isa,
+            "bingbong",
+            cranelift_module::default_libcall_names(),
+        )
+        .unwrap(),
+    );
 
-    for (d, b) in d.iter_mut().zip(output) {
-        *d = b;
-    }
+    let func_id = obj_mod
+        .declare_function("_start", Linkage::Export, &func.signature)
+        .unwrap();
 
-    let ptr = d.as_ptr();
+    let mut ctx = Context::for_function(func);
 
-    type F = fn() -> i64;
-    let f = unsafe { std::mem::transmute::<_, F>(ptr) };
+    let compiled = obj_mod.define_function(func_id, &mut ctx).unwrap();
+    println!("func size: {}", compiled.size);
 
-    let res = f();
+    let product = obj_mod.finish();
 
-    println!("{}", res);
+    let bytes = product.emit().unwrap();
+
+    std::fs::write("output.o", bytes).unwrap();
 }
 
 fn gen(instrs: &[Instr]) -> Function {

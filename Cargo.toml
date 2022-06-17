@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 cranelift = "0.84"
-mmap = "0.1"
+cranelift-object = "0.84"
+cranelift-module = "0.84"
