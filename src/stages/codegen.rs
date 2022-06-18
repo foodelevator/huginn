@@ -2,7 +2,7 @@ use std::{mem, ops};
 
 use cranelift::{
     codegen::{
-        ir::{types, AbiParam, ExternalName, Function, InstBuilder, Signature, Value},
+        ir::{types, AbiParam, ExternalName, Function, InstBuilder, Signature, Value as CLValue},
         isa, settings, Context,
     },
     frontend::{FunctionBuilder, FunctionBuilderContext},
@@ -12,8 +12,8 @@ use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::{
-    compilation::{self, Instr},
-    parsing::BinaryOperator,
+    bytecode::{Instr, Value},
+    common::BinaryOperator,
 };
 
 pub fn run_jit(instrs: &[Instr]) -> i64 {
@@ -94,12 +94,12 @@ fn gen(instrs: &[Instr]) -> Function {
     let mut values = ValueConverter::empty();
 
     for instr in instrs {
-        match instr {
-            &Instr::Const { dest, val } => {
+        match *instr {
+            Instr::Const { dest, val } => {
                 let res = builder.ins().iconst(types::I64, val);
                 values[dest] = res;
             }
-            &Instr::BinOp {
+            Instr::BinOp {
                 dest,
                 lhs,
                 rhs,
@@ -132,9 +132,9 @@ fn gen(instrs: &[Instr]) -> Function {
 fn gen_bin_op(
     builder: &mut FunctionBuilder,
     bin_op: BinaryOperator,
-    lhs: Value,
-    rhs: Value,
-) -> Value {
+    lhs: CLValue,
+    rhs: CLValue,
+) -> CLValue {
     match bin_op {
         BinaryOperator::Plus => builder.ins().iadd(lhs, rhs),
         BinaryOperator::Times => builder.ins().imul(lhs, rhs),
@@ -142,30 +142,30 @@ fn gen_bin_op(
 }
 
 struct ValueConverter {
-    values: Vec<Value>,
+    values: Vec<CLValue>,
 }
 
 impl ValueConverter {
     pub fn empty() -> Self {
         Self { values: Vec::new() }
     }
-    pub fn last(&self) -> Option<Value> {
-        self.values.get(self.values.len() - 1).copied()
+    pub fn last(&self) -> Option<CLValue> {
+        self.values.last().copied()
     }
 }
 
-impl ops::Index<compilation::Value> for ValueConverter {
-    type Output = Value;
+impl ops::Index<Value> for ValueConverter {
+    type Output = CLValue;
 
-    fn index(&self, index: compilation::Value) -> &Self::Output {
+    fn index(&self, index: Value) -> &Self::Output {
         &self.values[index as usize]
     }
 }
 
-impl ops::IndexMut<compilation::Value> for ValueConverter {
-    fn index_mut(&mut self, index: compilation::Value) -> &mut Self::Output {
+impl ops::IndexMut<Value> for ValueConverter {
+    fn index_mut(&mut self, index: Value) -> &mut Self::Output {
         for _ in self.values.len()..=index as usize {
-            self.values.push(Value::from_u32(0));
+            self.values.push(CLValue::from_u32(0));
         }
         &mut self.values[index as usize]
     }

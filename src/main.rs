@@ -4,23 +4,17 @@ use std::error::Error;
 use std::io::BufRead;
 use std::{
     io::{stdin, stdout, Write},
-    ops::Range,
     process,
 };
 
-use compilation::Compilation;
-use lexing::Lexer;
-use parsing::Expr;
+mod irs;
+mod stages;
 
-pub mod codegen;
-pub mod compilation;
-pub mod lexing;
-pub mod parsing;
+pub use irs::*;
+pub use stages::*;
 
 #[cfg(test)]
 mod tests;
-
-pub type Span = Range<usize>;
 
 fn main() {
     if let Err(err) = repl() {
@@ -33,19 +27,19 @@ fn repl() -> Result<(), Box<dyn Error>> {
     let mut line = String::new();
     loop {
         line.clear();
-        print!("\x1b[35mλ\x1b[0m ");
+        print!("\x1b[34m>\x1b[0m ");
         stdout().flush()?;
         stdin().lock().read_line(&mut line)?;
         if line.is_empty() {
             println!();
             break Ok(());
         }
-        let mut lexer = Lexer::new(line.chars().peekable()).peekable();
-        let expr = Expr::parse(&mut lexer);
+        let mut lexer = lexing::Lexer::new(line.chars().peekable()).peekable();
+        let expr = parsing::parse_expr(&mut lexer);
         if let Some(token) = lexer.peek() {
             println!("Warning: expected EOF, found {:?}", token);
         }
-        let instrs = Compilation::compile(&expr);
+        let instrs = compilation::Compilation::compile(&expr);
         let res = codegen::run_jit(&instrs);
         println!("{}", res);
     }

@@ -1,20 +1,7 @@
-use crate::parsing::{BinaryOperation, BinaryOperator, Expr};
-
-#[derive(Debug)]
-pub enum Instr {
-    Const {
-        dest: Value,
-        val: i64,
-    },
-    BinOp {
-        dest: Value,
-        lhs: Value,
-        rhs: Value,
-        operator: BinaryOperator,
-    },
-}
-
-pub type Value = u32;
+use crate::{
+    bytecode::{Instr, Value},
+    syntax_tree::{BinaryOperation, Expr},
+};
 
 #[derive(Debug, Default)]
 pub struct Compilation {

@@ -1,9 +1,13 @@
 use std::assert_matches::assert_matches;
 
 use crate::{
-    compilation::{Compilation, Instr},
-    lexing::{Lexer, TokenKind},
-    parsing::{BinaryOperation, BinaryOperator, Expr},
+    bytecode::Instr,
+    common::BinaryOperator,
+    compilation::Compilation,
+    lexing::Lexer,
+    parsing::parse_expr,
+    syntax_tree::{BinaryOperation, Expr},
+    tokens::TokenKind,
 };
 
 #[test]
@@ -36,7 +40,7 @@ fn lex() {
 fn parse_basic_arithmetic() {
     let mut lexer = Lexer::new("1 + 2 * 3".chars().peekable()).peekable();
     assert_matches!(
-        Expr::parse(&mut lexer),
+        parse_expr(&mut lexer),
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::Int(_, 1),
             operator: BinaryOperator::Plus,
@@ -53,7 +57,7 @@ fn parse_basic_arithmetic() {
 
     let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable()).peekable();
     assert_matches!(
-        Expr::parse(&mut lexer),
+        parse_expr(&mut lexer),
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::BinaryOperation(box BinaryOperation {
                 lhs: Expr::Int(_, 1),
@@ -70,7 +74,7 @@ fn parse_basic_arithmetic() {
 
     let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable()).peekable();
     assert_matches!(
-        Expr::parse(&mut lexer),
+        parse_expr(&mut lexer),
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::Grouping {
                 expr: box Expr::BinaryOperation(box BinaryOperation {
@@ -90,7 +94,7 @@ fn parse_basic_arithmetic() {
 
     let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable()).peekable();
     assert_matches!(
-        Expr::parse(&mut lexer),
+        parse_expr(&mut lexer),
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::Int(_, 1),
             operator: BinaryOperator::Times,
@@ -112,7 +116,7 @@ fn parse_basic_arithmetic() {
 #[test]
 fn compile_basic_arithmetic() {
     let mut lexer = Lexer::new("1 + 2 * 3".chars().peekable()).peekable();
-    let expr = Expr::parse(&mut lexer);
+    let expr = parse_expr(&mut lexer);
     assert_matches!(
         &Compilation::compile(&expr)[..],
         &[
@@ -136,7 +140,7 @@ fn compile_basic_arithmetic() {
     );
 
     let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable()).peekable();
-    let expr = Expr::parse(&mut lexer);
+    let expr = parse_expr(&mut lexer);
     assert_matches!(
         &Compilation::compile(&expr)[..],
         &[

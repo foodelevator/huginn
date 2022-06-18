@@ -1,39 +1,13 @@
 use std::iter::Peekable;
 
 use crate::{
-    lexing::{Token, TokenKind},
-    Span,
+    common::BinaryOperator,
+    syntax_tree::{BinaryOperation, Expr},
+    tokens::{Token, TokenKind},
 };
 
-#[derive(Debug, Clone)]
-pub enum Expr {
-    Grouping {
-        left_paren: Span,
-        expr: Box<Expr>,
-        right_paren: Span,
-    },
-    Int(Span, i64),
-    BinaryOperation(Box<BinaryOperation>),
-}
-
-#[derive(Debug, Clone)]
-pub struct BinaryOperation {
-    pub lhs: Expr,
-    pub rhs: Expr,
-    pub op_span: Span,
-    pub operator: BinaryOperator,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum BinaryOperator {
-    Plus,
-    Times,
-}
-
-impl Expr {
-    pub fn parse(input: &mut Peekable<impl Iterator<Item = Token>>) -> Self {
-        parse_terms(input)
-    }
+pub fn parse_expr(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
+    parse_terms(input)
 }
 
 macro_rules! assert_kind {
@@ -69,7 +43,7 @@ fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
             span: left_paren,
             kind: TokenKind::LeftParen,
         }) => {
-            let expr = Box::new(Expr::parse(input));
+            let expr = Box::new(parse_expr(input));
             let right_paren = assert_kind!(input.next(), TokenKind::RightParen);
             Expr::Grouping {
                 left_paren,
