@@ -4,6 +4,8 @@ pub type Span = Range<usize>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinaryOperator {
-    Plus,
-    Times,
+    Add,
+    Multiply,
+    Subtract,
+    Divide,
 }

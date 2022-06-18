@@ -8,9 +8,13 @@ pub struct Token {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TokenKind {
-    Int(i64),
     Plus,
     Asterix,
+    Minus,
+    Slash,
+
     LeftParen,
     RightParen,
+
+    Int(i64),
 }

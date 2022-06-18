@@ -20,21 +20,19 @@ macro_rules! assert_kind {
 }
 
 fn parse_terms(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
-    parse_left_associative_binary_operation(
-        input,
-        parse_factors,
-        TokenKind::Plus,
-        BinaryOperator::Plus,
-    )
+    parse_left_associative_binary_operation(input, parse_factors, |kind| match kind {
+        TokenKind::Plus => Some(BinaryOperator::Add),
+        TokenKind::Minus => Some(BinaryOperator::Subtract),
+        _ => None,
+    })
 }
 
 fn parse_factors(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
-    parse_left_associative_binary_operation(
-        input,
-        parse_innermost,
-        TokenKind::Asterix,
-        BinaryOperator::Times,
-    )
+    parse_left_associative_binary_operation(input, parse_innermost, |token| match token {
+        TokenKind::Asterix => Some(BinaryOperator::Multiply),
+        TokenKind::Slash => Some(BinaryOperator::Divide),
+        _ => None,
+    })
 }
 
 fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
@@ -62,17 +60,18 @@ fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
 fn parse_left_associative_binary_operation<
     F: Fn(&mut Peekable<I>) -> Expr,
     I: Iterator<Item = Token>,
+    M: Fn(&TokenKind) -> Option<BinaryOperator>,
 >(
     input: &mut Peekable<I>,
     inner: F,
-    middle: TokenKind,
-    operator: BinaryOperator,
+    matcher: M,
 ) -> Expr {
     let mut lhs = inner(input);
     while let Some(Token { span, kind }) = input.peek() {
-        if *kind != middle {
-            break;
-        }
+        let operator = match matcher(kind) {
+            Some(op) => op,
+            None => break,
+        };
         let op_span = span.clone();
         input.next();
         lhs = Expr::BinaryOperation(Box::new(BinaryOperation {

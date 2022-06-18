@@ -136,8 +136,10 @@ fn gen_bin_op(
     rhs: CLValue,
 ) -> CLValue {
     match bin_op {
-        BinaryOperator::Plus => builder.ins().iadd(lhs, rhs),
-        BinaryOperator::Times => builder.ins().imul(lhs, rhs),
+        BinaryOperator::Add => builder.ins().iadd(lhs, rhs),
+        BinaryOperator::Subtract => builder.ins().isub(lhs, rhs),
+        BinaryOperator::Multiply => builder.ins().imul(lhs, rhs),
+        BinaryOperator::Divide => builder.ins().sdiv(lhs, rhs),
     }
 }
 
