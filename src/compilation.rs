@@ -3,23 +3,23 @@ use crate::parsing::{BinaryOperation, BinaryOperator, Expr};
 #[derive(Debug)]
 pub enum Instr {
     Const {
-        dest: Variable,
+        dest: Value,
         val: i64,
     },
     BinOp {
-        dest: Variable,
-        lhs: Variable,
-        rhs: Variable,
+        dest: Value,
+        lhs: Value,
+        rhs: Value,
         operator: BinaryOperator,
     },
 }
 
-pub type Variable = u32;
+pub type Value = u32;
 
 #[derive(Debug, Default)]
 pub struct Compilation {
     instrs: Vec<Instr>,
-    var_counter: Variable,
+    var_counter: Value,
 }
 
 impl Compilation {
@@ -29,7 +29,7 @@ impl Compilation {
         this.instrs
     }
 
-    fn compile_expr(&mut self, expr: &Expr) -> Variable {
+    fn compile_expr(&mut self, expr: &Expr) -> Value {
         match expr {
             Expr::Grouping { expr, .. } => self.compile_expr(expr),
             &Expr::Int(_, val) => {
@@ -41,7 +41,7 @@ impl Compilation {
         }
     }
 
-    fn compile_bin_op(&mut self, bin_op: &BinaryOperation) -> Variable {
+    fn compile_bin_op(&mut self, bin_op: &BinaryOperation) -> Value {
         let l = self.compile_expr(&bin_op.lhs);
         let r = self.compile_expr(&bin_op.rhs);
         let dest = self.var();
@@ -58,7 +58,7 @@ impl Compilation {
         self.instrs.push(instr)
     }
 
-    fn var(&mut self) -> Variable {
+    fn var(&mut self) -> Value {
         let res = self.var_counter;
         self.var_counter += 1;
         res

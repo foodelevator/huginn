@@ -14,7 +14,6 @@ use parsing::Expr;
 
 pub mod codegen;
 pub mod compilation;
-pub mod evaluation;
 pub mod lexing;
 pub mod parsing;
 
@@ -47,6 +46,7 @@ fn repl() -> Result<(), Box<dyn Error>> {
             println!("Warning: expected EOF, found {:?}", token);
         }
         let instrs = Compilation::compile(&expr);
-        codegen::output_to_file(&instrs);
+        let res = codegen::run_jit(&instrs);
+        println!("{}", res);
     }
 }

@@ -1,3 +1,5 @@
+use std::mem;
+
 use cranelift::{
     codegen::{
         ir::{types, AbiParam, ExternalName, Function, InstBuilder, Signature, Value},
@@ -5,10 +7,40 @@ use cranelift::{
     },
     frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
 };
+use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::{compilation::Instr, parsing::BinaryOperator};
+
+pub fn run_jit(instrs: &[Instr]) -> i64 {
+    let func = gen(instrs);
+
+    let mut jit_mod =
+        JITModule::new(JITBuilder::new(cranelift_module::default_libcall_names()).unwrap());
+
+    let func_id = jit_mod
+        .declare_function("_start", Linkage::Export, &func.signature)
+        .unwrap();
+
+    let mut ctx = Context::for_function(func);
+
+    jit_mod.define_function(func_id, &mut ctx).unwrap();
+
+    jit_mod.finalize_definitions();
+
+    let func_ptr = jit_mod.get_finalized_function(func_id);
+
+    // SAFETY: who cares about stuff like that?
+    let callable: fn() -> i64 = unsafe { mem::transmute(func_ptr) };
+
+    let result = callable();
+
+    // SAFETY: callable and func_ptr are no longer used
+    unsafe { jit_mod.free_memory() };
+
+    result
+}
 
 pub fn output_to_file(instrs: &[Instr]) {
     let target_isa = isa::lookup_by_name("x86_64-linux")
@@ -33,8 +65,7 @@ pub fn output_to_file(instrs: &[Instr]) {
 
     let mut ctx = Context::for_function(func);
 
-    let compiled = obj_mod.define_function(func_id, &mut ctx).unwrap();
-    println!("func size: {}", compiled.size);
+    obj_mod.define_function(func_id, &mut ctx).unwrap();
 
     let product = obj_mod.finish();
 
@@ -59,15 +90,15 @@ fn gen(instrs: &[Instr]) -> Function {
 
     let mut return_variable = None;
     for instr in instrs {
-        match instr {
-            &Instr::Const { dest, val } => {
+        match *instr {
+            Instr::Const { dest, val } => {
                 let var = Variable::with_u32(dest);
                 builder.declare_var(var, types::I64);
 
                 let value = builder.ins().iconst(types::I64, val);
                 builder.def_var(var, value);
             }
-            &Instr::BinOp {
+            Instr::BinOp {
                 dest,
                 lhs,
                 rhs,
