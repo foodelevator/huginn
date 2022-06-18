@@ -21,6 +21,7 @@ mod tests;
 enum Mode {
     Lex,
     Output,
+    Bytecode,
     Run,
 }
 
@@ -30,6 +31,7 @@ fn main() {
     for arg in args {
         match &*arg {
             "lex" => mode = Mode::Lex,
+            "bytecode" => mode = Mode::Bytecode,
             "output" => mode = Mode::Output,
             _ => {}
         }
@@ -67,15 +69,25 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
             println!("Warning: expected EOF, found {:?}", token);
         }
 
-        let instrs = compilation::Compilation::compile(&expr);
+        let func = compilation::compile(&expr);
+
+        if mode == Mode::Bytecode {
+            for (i, block) in func.blocks.iter().enumerate() {
+                println!("block{}:", i);
+                for instr in &block.instrs {
+                    println!("    {:?}", instr);
+                }
+            }
+            continue;
+        }
 
         if mode == Mode::Output {
-            codegen::output_to_file(&instrs, "output.o");
+            codegen::output_to_file(&func, "output.o");
             return Ok(());
         }
 
         if mode == Mode::Run {
-            let res = codegen::run_jit(&instrs);
+            let res = codegen::run_jit(&func);
             println!("{}", res);
             continue;
         }

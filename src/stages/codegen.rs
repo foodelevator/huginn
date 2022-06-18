@@ -1,35 +1,39 @@
-use std::{mem, ops, path::Path};
+use std::{collections::HashSet, mem, path::Path};
 
-use cranelift::{
-    codegen::{
-        ir::{
-            condcodes::IntCC, types, AbiParam, ExternalName, Function, InstBuilder, Signature,
-            Value as CLValue,
+mod cl {
+    pub use cranelift::{
+        codegen::{
+            ir::{
+                condcodes::IntCC, types, AbiParam, Block, ExternalName, Function, Signature, Value,
+            },
+            isa, settings, Context,
         },
-        isa, settings, Context,
-    },
-    frontend::{FunctionBuilder, FunctionBuilderContext},
-};
-use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Linkage, Module};
-use cranelift_object::{ObjectBuilder, ObjectModule};
+        frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
+    };
+    pub use cranelift_jit::{JITBuilder, JITModule};
+    pub use cranelift_module::Linkage;
+    pub use cranelift_object::{ObjectBuilder, ObjectModule};
+}
+use cranelift::codegen::ir::InstBuilder as _;
+use cranelift_module::Module as _;
 
 use crate::{
-    bytecode::{Instr, Value},
+    bytecode::{Block, Function, Instr},
     common::BinaryOperator,
 };
 
-pub fn run_jit(instrs: &[Instr]) -> i64 {
-    let func = gen(instrs);
+pub fn run_jit(bytecode_func: &Function) -> i64 {
+    let codegen_context = CodegenContext::new(bytecode_func);
+    let func = codegen_context.gen_func();
 
     let mut jit_mod =
-        JITModule::new(JITBuilder::new(cranelift_module::default_libcall_names()).unwrap());
+        cl::JITModule::new(cl::JITBuilder::new(cranelift_module::default_libcall_names()).unwrap());
 
     let func_id = jit_mod
-        .declare_function("_start", Linkage::Export, &func.signature)
+        .declare_function("_start", cl::Linkage::Export, &func.signature)
         .unwrap();
 
-    let mut ctx = Context::for_function(func);
+    let mut ctx = cl::Context::for_function(func);
 
     jit_mod.define_function(func_id, &mut ctx).unwrap();
 
@@ -48,16 +52,17 @@ pub fn run_jit(instrs: &[Instr]) -> i64 {
     result
 }
 
-pub fn output_to_file<P: AsRef<Path>>(instrs: &[Instr], filename: P) {
-    let target_isa = isa::lookup_by_name("x86_64-linux")
+pub fn output_to_file<P: AsRef<Path>>(bytecode_func: &Function, filename: P) {
+    let target_isa = cl::isa::lookup_by_name("x86_64-linux")
         .unwrap()
-        .finish(settings::Flags::new(settings::builder()))
+        .finish(cl::settings::Flags::new(cl::settings::builder()))
         .unwrap();
 
-    let func = gen(instrs);
+    let codegen_context = CodegenContext::new(bytecode_func);
+    let func = codegen_context.gen_func();
 
-    let mut obj_mod = ObjectModule::new(
-        ObjectBuilder::new(
+    let mut obj_mod = cl::ObjectModule::new(
+        cl::ObjectBuilder::new(
             target_isa,
             "bingbong",
             cranelift_module::default_libcall_names(),
@@ -66,10 +71,10 @@ pub fn output_to_file<P: AsRef<Path>>(instrs: &[Instr], filename: P) {
     );
 
     let func_id = obj_mod
-        .declare_function("_start", Linkage::Export, &func.signature)
+        .declare_function("_start", cl::Linkage::Export, &func.signature)
         .unwrap();
 
-    let mut ctx = Context::for_function(func);
+    let mut ctx = cl::Context::for_function(func);
 
     obj_mod.define_function(func_id, &mut ctx).unwrap();
 
@@ -80,27 +85,84 @@ pub fn output_to_file<P: AsRef<Path>>(instrs: &[Instr], filename: P) {
     std::fs::write(filename, bytes).unwrap();
 }
 
-fn gen(instrs: &[Instr]) -> Function {
-    let sig = Signature {
-        params: vec![],
-        returns: vec![AbiParam::new(types::I64)],
-        call_conv: isa::CallConv::Fast, // wroom wroom
-    };
-    let mut func = Function::with_name_signature(ExternalName::user(0, 0), sig);
-    let mut fb_ctx = FunctionBuilderContext::new();
+struct CodegenContext<'f> {
+    blocks: Vec<cl::Block>,
+    func: &'f Function,
+}
 
-    let mut builder = FunctionBuilder::new(&mut func, &mut fb_ctx);
-    let block = builder.create_block();
-    builder.switch_to_block(block);
-    builder.seal_block(block);
+impl<'f> CodegenContext<'f> {
+    pub fn new(func: &'f Function) -> Self {
+        Self {
+            blocks: Vec::new(),
+            func,
+        }
+    }
 
-    let mut values = ValueConverter::empty();
+    pub fn gen_func(mut self) -> cl::Function {
+        let sig = cl::Signature {
+            params: vec![],
+            returns: vec![cl::AbiParam::new(cl::types::I64)],
+            call_conv: cl::isa::CallConv::Fast, // wroom wroom
+        };
+        let mut func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), sig);
+        let mut fb_ctx = cl::FunctionBuilderContext::new();
 
-    for instr in instrs {
+        let mut builder = cl::FunctionBuilder::new(&mut func, &mut fb_ctx);
+
+        self.declare_all_vars(&mut builder);
+
+        for _ in &self.func.blocks {
+            self.blocks.push(builder.create_block());
+        }
+
+        for (i, block) in self.func.blocks.iter().enumerate() {
+            builder.switch_to_block(self.blocks[i]);
+            self.gen_block(&mut builder, block);
+        }
+
+        builder.seal_all_blocks();
+
+        builder.finalize();
+
+        let flags = cl::settings::Flags::new(cl::settings::builder());
+        if let Err(err) = cranelift::codegen::verify_function(&func, &flags) {
+            panic!("codegen verify: {}", err);
+        }
+
+        func
+    }
+
+    fn declare_all_vars(&mut self, b: &mut cl::FunctionBuilder) {
+        let mut vars = HashSet::new();
+        for block in &self.func.blocks {
+            for instr in &block.instrs {
+                let var = match *instr {
+                    Instr::Const { dest, .. } => dest,
+                    Instr::BinOp { dest, .. } => dest,
+                    Instr::Mov { dest, .. } => dest,
+                    Instr::Jump(_) => continue,
+                    Instr::JumpIf { .. } => continue,
+                    Instr::Return(val) => val,
+                };
+                vars.insert(var);
+            }
+        }
+        for var in vars {
+            b.declare_var(cl::Variable::with_u32(var), cl::types::I64);
+        }
+    }
+
+    fn gen_block(&mut self, b: &mut cl::FunctionBuilder, block: &Block) {
+        for instr in &block.instrs {
+            self.gen_instr(b, instr)
+        }
+    }
+
+    fn gen_instr(&mut self, b: &mut cl::FunctionBuilder, instr: &Instr) {
         match *instr {
             Instr::Const { dest, val } => {
-                let res = builder.ins().iconst(types::I64, val);
-                values[dest] = res;
+                let res = b.ins().iconst(cl::types::I64, val);
+                b.def_var(cl::Variable::with_u32(dest), res);
             }
             Instr::BinOp {
                 dest,
@@ -108,82 +170,55 @@ fn gen(instrs: &[Instr]) -> Function {
                 rhs,
                 operator,
             } => {
-                let lhs = values[lhs];
-                let rhs = values[rhs];
-
-                let res = gen_bin_op(&mut builder, operator, lhs, rhs);
-
-                values[dest] = res;
+                let lhs = b.use_var(cl::Variable::with_u32(lhs));
+                let rhs = b.use_var(cl::Variable::with_u32(rhs));
+                let res = self.gen_bin_op(b, operator, lhs, rhs);
+                b.def_var(cl::Variable::with_u32(dest), res);
+            }
+            Instr::Mov { dest, src } => {
+                let val = b.use_var(cl::Variable::with_u32(src));
+                b.def_var(cl::Variable::with_u32(dest), val);
+            }
+            Instr::Jump(block_id) => {
+                let dest = self.blocks[block_id as usize];
+                b.ins().jump(dest, &[]);
+            }
+            Instr::JumpIf { cond, block_id } => {
+                let cond = b.use_var(cl::Variable::with_u32(cond));
+                let dest = self.blocks[block_id as usize];
+                b.ins().brnz(cond, dest, &[]);
+            }
+            Instr::Return(val) => {
+                let val = b.use_var(cl::Variable::with_u32(val));
+                b.ins().return_(&[val]);
             }
         }
     }
 
-    let return_value = values.last().unwrap();
-
-    builder.ins().return_(&[return_value]);
-
-    builder.finalize();
-
-    let flags = settings::Flags::new(settings::builder());
-    if let Err(err) = cranelift::codegen::verify_function(&func, &flags) {
-        panic!("codegen: {}", err);
-    }
-
-    func
-}
-
-fn gen_bin_op(
-    builder: &mut FunctionBuilder,
-    bin_op: BinaryOperator,
-    lhs: CLValue,
-    rhs: CLValue,
-) -> CLValue {
-    match bin_op {
-        BinaryOperator::Add => builder.ins().iadd(lhs, rhs),
-        BinaryOperator::Subtract => builder.ins().isub(lhs, rhs),
-        BinaryOperator::Multiply => builder.ins().imul(lhs, rhs),
-        BinaryOperator::Divide => builder.ins().sdiv(lhs, rhs),
-        BinaryOperator::Less => {
-            let c = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
-            let t = builder.ins().iconst(types::I64, 1);
-            let f = builder.ins().iconst(types::I64, 0);
-            builder.ins().select(c, t, f)
+    fn gen_bin_op(
+        &mut self,
+        b: &mut cl::FunctionBuilder,
+        bin_op: BinaryOperator,
+        lhs: cl::Value,
+        rhs: cl::Value,
+    ) -> cl::Value {
+        match bin_op {
+            BinaryOperator::Add => b.ins().iadd(lhs, rhs),
+            BinaryOperator::Subtract => b.ins().isub(lhs, rhs),
+            BinaryOperator::Multiply => b.ins().imul(lhs, rhs),
+            BinaryOperator::Divide => b.ins().sdiv(lhs, rhs),
+            BinaryOperator::Less => {
+                let c = b.ins().icmp(cl::IntCC::SignedLessThan, lhs, rhs);
+                let t = b.ins().iconst(cl::types::I64, 1);
+                let f = b.ins().iconst(cl::types::I64, 0);
+                b.ins().select(c, t, f)
+            }
+            BinaryOperator::Greater => {
+                let c = b.ins().icmp(cl::IntCC::SignedGreaterThan, lhs, rhs);
+                let t = b.ins().iconst(cl::types::I64, 1);
+                let f = b.ins().iconst(cl::types::I64, 0);
+                b.ins().select(c, t, f)
+            }
         }
-        BinaryOperator::Greater => {
-            let c = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
-            let t = builder.ins().iconst(types::I64, 1);
-            let f = builder.ins().iconst(types::I64, 0);
-            builder.ins().select(c, t, f)
-        }
-    }
-}
-
-struct ValueConverter {
-    values: Vec<CLValue>,
-}
-
-impl ValueConverter {
-    pub fn empty() -> Self {
-        Self { values: Vec::new() }
-    }
-    pub fn last(&self) -> Option<CLValue> {
-        self.values.last().copied()
-    }
-}
-
-impl ops::Index<Value> for ValueConverter {
-    type Output = CLValue;
-
-    fn index(&self, index: Value) -> &Self::Output {
-        &self.values[index as usize]
-    }
-}
-
-impl ops::IndexMut<Value> for ValueConverter {
-    fn index_mut(&mut self, index: Value) -> &mut Self::Output {
-        for _ in self.values.len()..=index as usize {
-            self.values.push(CLValue::from_u32(0));
-        }
-        &mut self.values[index as usize]
     }
 }

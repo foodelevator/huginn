@@ -43,6 +43,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             '>' => TokenKind::Greater,
             ws if ws.is_whitespace() => return None,
             d @ '0'..='9' => self.lex_number(d),
+            c if c.is_alphabetic() => self.lex_word(c),
             c => todo!("Found not yet lexable char {}", c),
         };
 
@@ -62,6 +63,26 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             self.index += 1
         }
         c
+    }
+
+    fn lex_word(&mut self, first: char) -> TokenKind {
+        let mut word = String::from(first);
+
+        loop {
+            match self.peek_char() {
+                Some(c) if c.is_alphanumeric() => {
+                    self.next_char();
+                    word.push(c);
+                }
+                _ => break,
+            }
+        }
+
+        match &*word {
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            _ => todo!("Cannot yet lex identifiers"),
+        }
     }
 
     fn lex_number(&mut self, first: char) -> TokenKind {

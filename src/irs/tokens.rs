@@ -15,8 +15,13 @@ pub enum TokenKind {
 
     LeftParen,
     RightParen,
+    LeftCurly,
+    RightCurly,
     Less,
     Greater,
+
+    If,
+    Else,
 
     Int(i64),
 }

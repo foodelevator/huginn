@@ -2,7 +2,7 @@ use std::iter::Peekable;
 
 use crate::{
     common::{BinaryOperator, Span},
-    syntax_tree::{BinaryOperation, Expr, Grouping},
+    syntax_tree::{BinaryOperation, Expr, Grouping, If},
     tokens::{Token, TokenKind},
 };
 
@@ -36,11 +36,38 @@ fn parse_terms(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
 }
 
 fn parse_factors(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
-    parse_left_associative_binary_operation(input, parse_innermost, |token| match token {
+    parse_left_associative_binary_operation(input, parse_if, |token| match token {
         TokenKind::Asterix => Some(BinaryOperator::Multiply),
         TokenKind::Slash => Some(BinaryOperator::Divide),
         _ => None,
     })
+}
+
+fn parse_if(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
+    match input.peek() {
+        Some(&Token {
+            span: if_span,
+            kind: TokenKind::If,
+        }) => {
+            input.next();
+            let cond = parse_expr(input);
+            assert_kind!(input.next(), TokenKind::LeftCurly);
+            let then = parse_expr(input);
+            assert_kind!(input.next(), TokenKind::RightCurly);
+            assert_kind!(input.next(), TokenKind::Else);
+            assert_kind!(input.next(), TokenKind::LeftCurly);
+            let else_ = parse_expr(input);
+            assert_kind!(input.next(), TokenKind::RightCurly);
+
+            Expr::If(Box::new(If {
+                if_span,
+                cond,
+                then,
+                else_,
+            }))
+        }
+        _ => parse_innermost(input),
+    }
 }
 
 fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
@@ -78,11 +105,11 @@ fn parse_left_associative_binary_operation<
 ) -> Expr {
     let mut lhs = inner(input);
     while let Some(Token { span, kind }) = input.peek() {
+        let op_span = *span;
         let operator = match matcher(kind) {
             Some(op) => op,
             None => break,
         };
-        let op_span = span.clone();
         input.next();
         lhs = Expr::BinaryOperation(Box::new(BinaryOperation {
             lhs,

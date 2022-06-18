@@ -4,10 +4,10 @@ use crate::{
     bytecode::Instr,
     codegen,
     common::BinaryOperator,
-    compilation::Compilation,
+    compilation::compile,
     lexing::Lexer,
     parsing::parse_expr,
-    syntax_tree::{BinaryOperation, Expr},
+    syntax_tree::{BinaryOperation, Expr, Grouping},
     tokens::TokenKind,
 };
 
@@ -92,7 +92,7 @@ fn parse_basic_arithmetic() {
     assert_matches!(
         parse_expr(&mut lexer),
         Expr::BinaryOperation(box BinaryOperation {
-            lhs: Expr::Grouping {
+            lhs: Expr::Grouping(Grouping {
                 expr: box Expr::BinaryOperation(box BinaryOperation {
                     lhs: Expr::Int(_, 1),
                     operator: BinaryOperator::Add,
@@ -100,7 +100,7 @@ fn parse_basic_arithmetic() {
                     ..
                 }),
                 ..
-            },
+            }),
             operator: BinaryOperator::Multiply,
             rhs: Expr::Int(_, 3),
             ..
@@ -114,7 +114,7 @@ fn parse_basic_arithmetic() {
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::Int(_, 1),
             operator: BinaryOperator::Multiply,
-            rhs: Expr::Grouping {
+            rhs: Expr::Grouping(Grouping {
                 expr: box Expr::BinaryOperation(box BinaryOperation {
                     lhs: Expr::Int(_, 2),
                     operator: BinaryOperator::Add,
@@ -122,7 +122,7 @@ fn parse_basic_arithmetic() {
                     ..
                 }),
                 ..
-            },
+            }),
             ..
         })
     );
@@ -133,8 +133,10 @@ fn parse_basic_arithmetic() {
 fn compile_basic_arithmetic() {
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable()).peekable();
     let expr = parse_expr(&mut lexer);
+    let func = compile(&expr);
+    assert_eq!(func.blocks.len(), 1);
     assert_matches!(
-        &Compilation::compile(&expr)[..],
+        &func.blocks[0].instrs[..],
         &[
             Instr::Const { val: 1, dest: one_a },
             Instr::Const { val: 2, dest: two_a },
@@ -166,8 +168,10 @@ fn compile_basic_arithmetic() {
                 operator: BinaryOperator::Subtract,
                 lhs: prod_2_b,
                 rhs: prod_3_b,
+                dest: prod_4_a,
                 ..
             },
+            Instr::Return(prod_4_b),
         ] if one_a == one_b &&
              two_a == two_b &&
              three_a == three_b &&
@@ -175,7 +179,8 @@ fn compile_basic_arithmetic() {
              five_a == five_b &&
              prod_1_a == prod_1_b &&
              prod_2_a == prod_2_b &&
-             prod_3_a == prod_3_b
+             prod_3_a == prod_3_b &&
+             prod_4_a == prod_4_b
     );
 }
 
@@ -183,7 +188,7 @@ fn compile_basic_arithmetic() {
 fn codegen_basic_arithmetic() {
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable()).peekable();
     let expr = parse_expr(&mut lexer);
-    let instrs = Compilation::compile(&expr);
-    let res = codegen::run_jit(&instrs);
+    let func = compile(&expr);
+    let res = codegen::run_jit(&func);
     assert_eq!(1 + 2 * 3 - 4 / 5, res);
 }
