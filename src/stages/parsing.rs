@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 
 use crate::{
-    common::BinaryOperator,
+    common::{BinaryOperator, Span},
     syntax_tree::{BinaryOperation, Expr},
     tokens::{Token, TokenKind},
 };
@@ -40,20 +40,22 @@ fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
         Some(Token {
             span: left_paren,
             kind: TokenKind::LeftParen,
-        }) => {
-            let expr = Box::new(parse_expr(input));
-            let right_paren = assert_kind!(input.next(), TokenKind::RightParen);
-            Expr::Grouping {
-                left_paren,
-                expr,
-                right_paren,
-            }
-        }
+        }) => finish_grouping(input, left_paren),
         Some(Token {
             span,
             kind: TokenKind::Int(val),
         }) => Expr::Int(span, val),
         _ => todo!(),
+    }
+}
+
+fn finish_grouping(input: &mut Peekable<impl Iterator<Item = Token>>, left_paren: Span) -> Expr {
+    let expr = Box::new(parse_expr(input));
+    let right_paren = assert_kind!(input.next(), TokenKind::RightParen);
+    Expr::Grouping {
+        left_paren,
+        expr,
+        right_paren,
     }
 }
 

@@ -7,6 +7,19 @@ pub struct Lexer<I: Iterator<Item = char>> {
     index: usize,
 }
 
+impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(token) = self.advance() {
+                return Some(token);
+            }
+            self.input.peek()?;
+        }
+    }
+}
+
 impl<I: Iterator<Item = char>> Lexer<I> {
     pub fn new(input: Peekable<I>) -> Self {
         Self { input, index: 0 }
@@ -22,20 +35,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             '(' => Some(TokenKind::LeftParen),
             ')' => Some(TokenKind::RightParen),
             ws if ws.is_whitespace() => None,
-            d @ '0'..='9' => {
-                let mut v = d as i64 - '0' as i64;
-
-                // FIXME: handle overflows
-                while let Some(d @ ('0'..='9' | '_')) = self.peek_char() {
-                    self.next_char();
-                    if matches!(d, '0'..='9') {
-                        v *= 10;
-                        v += d as i64 - '0' as i64;
-                    }
-                }
-
-                Some(TokenKind::Int(v))
-            }
+            d @ '0'..='9' => Some(self.lex_number(d)),
             c => todo!("Found not yet lexable char {}", c),
         }?;
 
@@ -56,17 +56,43 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
         c
     }
-}
 
-impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(token) = self.advance() {
-                return Some(token);
+    fn lex_number(&mut self, first: char) -> TokenKind {
+        let mut base = 10;
+        if first == '0' {
+            match self.peek_char() {
+                Some('x') => {
+                    base = 0x10;
+                    self.next_char();
+                }
+                Some('b') => {
+                    base = 0b10;
+                    self.next_char();
+                }
+                _ => {}
             }
-            self.input.peek()?;
         }
+
+        let mut value = first as i64 - '0' as i64;
+
+        // FIXME: handle overflows
+        loop {
+            let v = match self.peek_char() {
+                Some(d @ '0'..='9') if d as i64 - ('0' as i64) < base => d as i64 - '0' as i64,
+                Some(d @ 'a'..='f') if d as i64 - 'a' as i64 + 0xa < base => {
+                    d as i64 - '0' as i64 + 0xa
+                }
+                Some('_') => {
+                    self.next_char();
+                    continue;
+                }
+                _ => break,
+            };
+            self.next_char();
+            value *= base;
+            value += v;
+        }
+
+        TokenKind::Int(value)
     }
 }
