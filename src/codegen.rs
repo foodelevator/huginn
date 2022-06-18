@@ -1,17 +1,20 @@
-use std::mem;
+use std::{mem, ops};
 
 use cranelift::{
     codegen::{
         ir::{types, AbiParam, ExternalName, Function, InstBuilder, Signature, Value},
         isa, settings, Context,
     },
-    frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
+    frontend::{FunctionBuilder, FunctionBuilderContext},
 };
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use crate::{compilation::Instr, parsing::BinaryOperator};
+use crate::{
+    compilation::{self, Instr},
+    parsing::BinaryOperator,
+};
 
 pub fn run_jit(instrs: &[Instr]) -> i64 {
     let func = gen(instrs);
@@ -88,38 +91,31 @@ fn gen(instrs: &[Instr]) -> Function {
     builder.switch_to_block(block);
     builder.seal_block(block);
 
-    let mut return_variable = None;
-    for instr in instrs {
-        match *instr {
-            Instr::Const { dest, val } => {
-                let var = Variable::with_u32(dest);
-                builder.declare_var(var, types::I64);
+    let mut values = ValueConverter::empty();
 
-                let value = builder.ins().iconst(types::I64, val);
-                builder.def_var(var, value);
+    for instr in instrs {
+        match instr {
+            &Instr::Const { dest, val } => {
+                let res = builder.ins().iconst(types::I64, val);
+                values[dest] = res;
             }
-            Instr::BinOp {
+            &Instr::BinOp {
                 dest,
                 lhs,
                 rhs,
                 operator,
             } => {
-                let var = Variable::with_u32(dest);
-                builder.declare_var(var, types::I64);
-
-                let lhs = builder.use_var(Variable::with_u32(lhs));
-                let rhs = builder.use_var(Variable::with_u32(rhs));
+                let lhs = values[lhs];
+                let rhs = values[rhs];
 
                 let res = gen_bin_op(&mut builder, operator, lhs, rhs);
 
-                builder.def_var(var, res);
-
-                return_variable = Some(var);
+                values[dest] = res;
             }
         }
     }
 
-    let return_value = builder.use_var(return_variable.unwrap());
+    let return_value = values.last().unwrap();
 
     builder.ins().return_(&[return_value]);
 
@@ -142,5 +138,35 @@ fn gen_bin_op(
     match bin_op {
         BinaryOperator::Plus => builder.ins().iadd(lhs, rhs),
         BinaryOperator::Times => builder.ins().imul(lhs, rhs),
+    }
+}
+
+struct ValueConverter {
+    values: Vec<Value>,
+}
+
+impl ValueConverter {
+    pub fn empty() -> Self {
+        Self { values: Vec::new() }
+    }
+    pub fn last(&self) -> Option<Value> {
+        self.values.get(self.values.len() - 1).copied()
+    }
+}
+
+impl ops::Index<compilation::Value> for ValueConverter {
+    type Output = Value;
+
+    fn index(&self, index: compilation::Value) -> &Self::Output {
+        &self.values[index as usize]
+    }
+}
+
+impl ops::IndexMut<compilation::Value> for ValueConverter {
+    fn index_mut(&mut self, index: compilation::Value) -> &mut Self::Output {
+        for _ in self.values.len()..=index as usize {
+            self.values.push(Value::from_u32(0));
+        }
+        &mut self.values[index as usize]
     }
 }
