@@ -1,6 +1,6 @@
 use crate::{
     bytecode::{Instr, Value},
-    syntax_tree::{BinaryOperation, Expr},
+    syntax_tree::{BinaryOperation, Expr, Grouping},
 };
 
 #[derive(Debug, Default)]
@@ -18,7 +18,7 @@ impl Compilation {
 
     fn compile_expr(&mut self, expr: &Expr) -> Value {
         match expr {
-            Expr::Grouping { expr, .. } => self.compile_expr(expr),
+            Expr::Grouping(Grouping { expr, .. }) => self.compile_expr(expr),
             &Expr::Int(_, val) => {
                 let dest = self.var();
                 self.emit(Instr::Const { dest, val });

@@ -1,8 +1,11 @@
-use std::{mem, ops};
+use std::{mem, ops, path::Path};
 
 use cranelift::{
     codegen::{
-        ir::{types, AbiParam, ExternalName, Function, InstBuilder, Signature, Value as CLValue},
+        ir::{
+            condcodes::IntCC, types, AbiParam, ExternalName, Function, InstBuilder, Signature,
+            Value as CLValue,
+        },
         isa, settings, Context,
     },
     frontend::{FunctionBuilder, FunctionBuilderContext},
@@ -45,7 +48,7 @@ pub fn run_jit(instrs: &[Instr]) -> i64 {
     result
 }
 
-pub fn output_to_file(instrs: &[Instr]) {
+pub fn output_to_file<P: AsRef<Path>>(instrs: &[Instr], filename: P) {
     let target_isa = isa::lookup_by_name("x86_64-linux")
         .unwrap()
         .finish(settings::Flags::new(settings::builder()))
@@ -74,7 +77,7 @@ pub fn output_to_file(instrs: &[Instr]) {
 
     let bytes = product.emit().unwrap();
 
-    std::fs::write("output.o", bytes).unwrap();
+    std::fs::write(filename, bytes).unwrap();
 }
 
 fn gen(instrs: &[Instr]) -> Function {
@@ -140,6 +143,18 @@ fn gen_bin_op(
         BinaryOperator::Subtract => builder.ins().isub(lhs, rhs),
         BinaryOperator::Multiply => builder.ins().imul(lhs, rhs),
         BinaryOperator::Divide => builder.ins().sdiv(lhs, rhs),
+        BinaryOperator::Less => {
+            let c = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
+            let t = builder.ins().iconst(types::I64, 1);
+            let f = builder.ins().iconst(types::I64, 0);
+            builder.ins().select(c, t, f)
+        }
+        BinaryOperator::Greater => {
+            let c = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
+            let t = builder.ins().iconst(types::I64, 1);
+            let f = builder.ins().iconst(types::I64, 0);
+            builder.ins().select(c, t, f)
+        }
     }
 }
 

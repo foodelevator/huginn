@@ -1,6 +1,9 @@
 use std::iter::Peekable;
 
-use crate::tokens::{Token, TokenKind};
+use crate::{
+    common::Span,
+    tokens::{Token, TokenKind},
+};
 
 pub struct Lexer<I: Iterator<Item = char>> {
     input: Peekable<I>,
@@ -28,19 +31,23 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     fn advance(&mut self) -> Option<Token> {
         let start = self.index;
         let kind = match self.next_char()? {
-            '+' => Some(TokenKind::Plus),
-            '-' => Some(TokenKind::Minus),
-            '*' => Some(TokenKind::Asterix),
-            '/' => Some(TokenKind::Slash),
-            '(' => Some(TokenKind::LeftParen),
-            ')' => Some(TokenKind::RightParen),
-            ws if ws.is_whitespace() => None,
-            d @ '0'..='9' => Some(self.lex_number(d)),
+            '+' => TokenKind::Plus,
+            '-' => TokenKind::Minus,
+            '*' => TokenKind::Asterix,
+            '/' => TokenKind::Slash,
+            '(' => TokenKind::LeftParen,
+            ')' => TokenKind::RightParen,
+            '{' => TokenKind::LeftCurly,
+            '}' => TokenKind::RightCurly,
+            '<' => TokenKind::Less,
+            '>' => TokenKind::Greater,
+            ws if ws.is_whitespace() => return None,
+            d @ '0'..='9' => self.lex_number(d),
             c => todo!("Found not yet lexable char {}", c),
-        }?;
+        };
 
         Some(Token {
-            span: start..self.index,
+            span: Span::new(start..self.index),
             kind,
         })
     }

@@ -2,21 +2,29 @@ use std::iter::Peekable;
 
 use crate::{
     common::{BinaryOperator, Span},
-    syntax_tree::{BinaryOperation, Expr},
+    syntax_tree::{BinaryOperation, Expr, Grouping},
     tokens::{Token, TokenKind},
 };
 
 pub fn parse_expr(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
-    parse_terms(input)
+    parse_condition(input)
 }
 
 macro_rules! assert_kind {
     ($token:expr, $kind:pat) => {
         match $token {
             Some(Token { span, kind: $kind }) => span,
-            _ => todo!(),
+            _ => panic!(),
         }
     };
+}
+
+fn parse_condition(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
+    parse_left_associative_binary_operation(input, parse_terms, |kind| match kind {
+        TokenKind::Less => Some(BinaryOperator::Less),
+        TokenKind::Greater => Some(BinaryOperator::Greater),
+        _ => None,
+    })
 }
 
 fn parse_terms(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
@@ -52,11 +60,11 @@ fn parse_innermost(input: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
 fn finish_grouping(input: &mut Peekable<impl Iterator<Item = Token>>, left_paren: Span) -> Expr {
     let expr = Box::new(parse_expr(input));
     let right_paren = assert_kind!(input.next(), TokenKind::RightParen);
-    Expr::Grouping {
+    Expr::Grouping(Grouping {
         left_paren,
         expr,
         right_paren,
-    }
+    })
 }
 
 fn parse_left_associative_binary_operation<
