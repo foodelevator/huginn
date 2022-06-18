@@ -1,4 +1,4 @@
-use crate::common::BinaryOperator;
+use crate::common::{BinaryOperator, UnaryOperator};
 
 #[derive(Debug, Default)]
 pub struct Function {
@@ -16,11 +16,16 @@ pub enum Instr {
         dest: Value,
         val: i64,
     },
-    BinOp {
+    BinaryOperator {
         dest: Value,
         lhs: Value,
         rhs: Value,
         operator: BinaryOperator,
+    },
+    UnaryOperator {
+        dest: Value,
+        operand: Value,
+        operator: UnaryOperator,
     },
     Mov {
         dest: Value,

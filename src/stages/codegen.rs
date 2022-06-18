@@ -4,7 +4,8 @@ mod cl {
     pub use cranelift::{
         codegen::{
             ir::{
-                condcodes::IntCC, types, AbiParam, Block, ExternalName, Function, Signature, Value,
+                condcodes::IntCC, types::I64, AbiParam, Block, ExternalName, Function, Signature,
+                Value,
             },
             isa, settings, Context,
         },
@@ -19,7 +20,7 @@ use cranelift_module::Module as _;
 
 use crate::{
     bytecode::{Block, Function, Instr},
-    common::BinaryOperator,
+    common::{BinaryOperator, UnaryOperator},
 };
 
 pub fn run_jit(bytecode_func: &Function) -> i64 {
@@ -101,7 +102,7 @@ impl<'f> CodegenContext<'f> {
     pub fn gen_func(mut self) -> cl::Function {
         let sig = cl::Signature {
             params: vec![],
-            returns: vec![cl::AbiParam::new(cl::types::I64)],
+            returns: vec![cl::AbiParam::new(cl::I64)],
             call_conv: cl::isa::CallConv::Fast, // wroom wroom
         };
         let mut func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), sig);
@@ -138,7 +139,8 @@ impl<'f> CodegenContext<'f> {
             for instr in &block.instrs {
                 let var = match *instr {
                     Instr::Const { dest, .. } => dest,
-                    Instr::BinOp { dest, .. } => dest,
+                    Instr::BinaryOperator { dest, .. } => dest,
+                    Instr::UnaryOperator { dest, .. } => dest,
                     Instr::Mov { dest, .. } => dest,
                     Instr::Jump(_) => continue,
                     Instr::JumpIf { .. } => continue,
@@ -148,7 +150,7 @@ impl<'f> CodegenContext<'f> {
             }
         }
         for var in vars {
-            b.declare_var(cl::Variable::with_u32(var), cl::types::I64);
+            b.declare_var(cl::Variable::with_u32(var), cl::I64);
         }
     }
 
@@ -161,10 +163,10 @@ impl<'f> CodegenContext<'f> {
     fn gen_instr(&mut self, b: &mut cl::FunctionBuilder, instr: &Instr) {
         match *instr {
             Instr::Const { dest, val } => {
-                let res = b.ins().iconst(cl::types::I64, val);
+                let res = b.ins().iconst(cl::I64, val);
                 b.def_var(cl::Variable::with_u32(dest), res);
             }
-            Instr::BinOp {
+            Instr::BinaryOperator {
                 dest,
                 lhs,
                 rhs,
@@ -173,6 +175,15 @@ impl<'f> CodegenContext<'f> {
                 let lhs = b.use_var(cl::Variable::with_u32(lhs));
                 let rhs = b.use_var(cl::Variable::with_u32(rhs));
                 let res = self.gen_bin_op(b, operator, lhs, rhs);
+                b.def_var(cl::Variable::with_u32(dest), res);
+            }
+            Instr::UnaryOperator {
+                dest,
+                operand,
+                operator,
+            } => {
+                let operand = b.use_var(cl::Variable::with_u32(operand));
+                let res = self.gen_unary_op(b, operator, operand);
                 b.def_var(cl::Variable::with_u32(dest), res);
             }
             Instr::Mov { dest, src } => {
@@ -209,16 +220,43 @@ impl<'f> CodegenContext<'f> {
             BinaryOperator::Divide => b.ins().sdiv(lhs, rhs),
             BinaryOperator::Less => {
                 let c = b.ins().icmp(cl::IntCC::SignedLessThan, lhs, rhs);
-                let t = b.ins().iconst(cl::types::I64, 1);
-                let f = b.ins().iconst(cl::types::I64, 0);
-                b.ins().select(c, t, f)
+                b.ins().bint(cl::I64, c)
             }
             BinaryOperator::Greater => {
                 let c = b.ins().icmp(cl::IntCC::SignedGreaterThan, lhs, rhs);
-                let t = b.ins().iconst(cl::types::I64, 1);
-                let f = b.ins().iconst(cl::types::I64, 0);
-                b.ins().select(c, t, f)
+                b.ins().bint(cl::I64, c)
             }
+            BinaryOperator::Equal => {
+                let c = b.ins().icmp(cl::IntCC::Equal, lhs, rhs);
+                b.ins().bint(cl::I64, c)
+            }
+            BinaryOperator::NotEqual => {
+                let c = b.ins().icmp(cl::IntCC::NotEqual, lhs, rhs);
+                b.ins().bint(cl::I64, c)
+            }
+            BinaryOperator::LessEqual => {
+                let c = b.ins().icmp(cl::IntCC::SignedLessThanOrEqual, lhs, rhs);
+                b.ins().bint(cl::I64, c)
+            }
+            BinaryOperator::GreaterEqual => {
+                let c = b.ins().icmp(cl::IntCC::SignedGreaterThanOrEqual, lhs, rhs);
+                b.ins().bint(cl::I64, c)
+            }
+        }
+    }
+
+    fn gen_unary_op(
+        &mut self,
+        b: &mut cl::FunctionBuilder,
+        unary_op: UnaryOperator,
+        operand: cl::Value,
+    ) -> cl::Value {
+        match unary_op {
+            UnaryOperator::Not => {
+                let c = b.ins().icmp_imm(cl::IntCC::Equal, operand, 0);
+                b.ins().bint(cl::I64, c)
+            }
+            UnaryOperator::Negate => b.ins().ineg(operand),
         }
     }
 }

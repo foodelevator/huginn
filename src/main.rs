@@ -20,7 +20,8 @@ mod tests;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Lex,
-    Output,
+    Parse,
+    Object,
     Bytecode,
     Run,
 }
@@ -31,8 +32,9 @@ fn main() {
     for arg in args {
         match &*arg {
             "lex" => mode = Mode::Lex,
+            "parse" => mode = Mode::Parse,
             "bytecode" => mode = Mode::Bytecode,
-            "output" => mode = Mode::Output,
+            "object" => mode = Mode::Object,
             _ => {}
         }
     }
@@ -69,6 +71,11 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
             println!("Warning: expected EOF, found {:?}", token);
         }
 
+        if mode == Mode::Parse {
+            println!("{:#?}", expr);
+            continue;
+        }
+
         let func = compilation::compile(&expr);
 
         if mode == Mode::Bytecode {
@@ -81,7 +88,7 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        if mode == Mode::Output {
+        if mode == Mode::Object {
             codegen::output_to_file(&func, "output.o");
             return Ok(());
         }

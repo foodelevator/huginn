@@ -1,6 +1,6 @@
 use crate::{
     bytecode::{Block, BlockId, Function, Instr, Value},
-    syntax_tree::{BinaryOperation, Expr, Grouping, If},
+    syntax_tree::{BinaryOperation, Expr, Grouping, If, UnaryOperation},
 };
 
 pub fn compile(expr: &Expr) -> Function {
@@ -39,19 +39,32 @@ impl Compiler {
                 dest
             }
             Expr::BinaryOperation(bin_op) => self.compile_bin_op(bin_op),
+            Expr::UnaryOperation(bin_op) => self.compile_unary_op(bin_op),
             Expr::If(if_) => self.compile_if(if_),
         }
     }
 
     fn compile_bin_op(&mut self, bin_op: &BinaryOperation) -> Value {
-        let l = self.compile_expr(&bin_op.lhs);
-        let r = self.compile_expr(&bin_op.rhs);
         let dest = self.var();
-        self.emit(Instr::BinOp {
+        let lhs = self.compile_expr(&bin_op.lhs);
+        let rhs = self.compile_expr(&bin_op.rhs);
+        self.emit(Instr::BinaryOperator {
             dest,
-            lhs: l,
-            rhs: r,
+            lhs,
+            rhs,
             operator: bin_op.operator,
+        });
+        dest
+    }
+
+    fn compile_unary_op(&mut self, unary_op: &UnaryOperation) -> Value {
+        let dest = self.var();
+        let operand = self.compile_expr(&unary_op.operand);
+        let operator = unary_op.operator;
+        self.emit(Instr::UnaryOperator {
+            dest,
+            operand,
+            operator,
         });
         dest
     }

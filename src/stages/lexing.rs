@@ -39,7 +39,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             ')' => TokenKind::RightParen,
             '{' => TokenKind::LeftCurly,
             '}' => TokenKind::RightCurly,
+            '=' => TokenKind::Equal,
+            '!' if self.next_if_eq('=').is_some() => TokenKind::BangEqual,
+            '!' => TokenKind::Bang,
+            '<' if self.next_if_eq('=').is_some() => TokenKind::LessEqual,
             '<' => TokenKind::Less,
+            '>' if self.next_if_eq('=').is_some() => TokenKind::GreaterEqual,
             '>' => TokenKind::Greater,
             ws if ws.is_whitespace() => return None,
             d @ '0'..='9' => self.lex_number(d),
@@ -51,6 +56,19 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             span: Span::new(start..self.index),
             kind,
         })
+    }
+
+    fn next_if_eq(&mut self, c: char) -> Option<char> {
+        self.next_if(|ch| c == ch)
+    }
+
+    fn next_if(&mut self, p: impl Fn(char) -> bool) -> Option<char> {
+        let ch = self.peek_char()?;
+        if p(ch) {
+            self.next_char()
+        } else {
+            None
+        }
     }
 
     fn peek_char(&mut self) -> Option<char> {

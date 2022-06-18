@@ -37,6 +37,16 @@ pub enum BinaryOperator {
     Multiply,
     Subtract,
     Divide,
+    Equal,
+    NotEqual,
     Less,
+    LessEqual,
     Greater,
+    GreaterEqual,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum UnaryOperator {
+    Not,
+    Negate,
 }

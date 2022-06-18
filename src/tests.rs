@@ -13,8 +13,8 @@ use crate::{
 
 #[test]
 fn lex() {
-    let input = "
-    )-23 1 + 2+81/3*2
+    let input = "else
+    )-23 1 + 2!=+81/3*2 if=>=
     (
     ";
 
@@ -25,18 +25,23 @@ fn lex() {
     assert_eq!(
         tokens,
         vec![
+            TokenKind::Else,
             TokenKind::RightParen,
             TokenKind::Minus,
             TokenKind::Int(23),
             TokenKind::Int(1),
             TokenKind::Plus,
             TokenKind::Int(2),
+            TokenKind::BangEqual,
             TokenKind::Plus,
             TokenKind::Int(81),
             TokenKind::Slash,
             TokenKind::Int(3),
             TokenKind::Asterix,
             TokenKind::Int(2),
+            TokenKind::If,
+            TokenKind::Equal,
+            TokenKind::GreaterEqual,
             TokenKind::LeftParen,
         ]
     );
@@ -141,14 +146,14 @@ fn compile_basic_arithmetic() {
             Instr::Const { val: 1, dest: one_a },
             Instr::Const { val: 2, dest: two_a },
             Instr::Const { val: 3, dest: three_a },
-            Instr::BinOp {
+            Instr::BinaryOperator {
                 operator: BinaryOperator::Multiply,
                 lhs: two_b,
                 rhs: three_b,
                 dest: prod_1_a,
                 ..
             },
-            Instr::BinOp {
+            Instr::BinaryOperator {
                 operator: BinaryOperator::Add,
                 lhs: one_b,
                 rhs: prod_1_b,
@@ -157,14 +162,14 @@ fn compile_basic_arithmetic() {
             },
             Instr::Const { val: 4, dest: four_a },
             Instr::Const { val: 5, dest: five_a },
-            Instr::BinOp {
+            Instr::BinaryOperator {
                 operator: BinaryOperator::Divide,
                 lhs: four_b,
                 rhs: five_b,
                 dest: prod_3_a,
                 ..
             },
-            Instr::BinOp {
+            Instr::BinaryOperator {
                 operator: BinaryOperator::Subtract,
                 lhs: prod_2_b,
                 rhs: prod_3_b,
@@ -191,4 +196,24 @@ fn codegen_basic_arithmetic() {
     let func = compile(&expr);
     let res = codegen::run_jit(&func);
     assert_eq!(1 + 2 * 3 - 4 / 5, res);
+}
+
+#[test]
+fn codegen_booleans() {
+    for (code, expected) in [("1 <= 2", 1), ("!-2", 0), ("3 = 1 + 2", 1)] {
+        let mut lexer = Lexer::new(code.chars().peekable()).peekable();
+        let expr = parse_expr(&mut lexer);
+        let func = compile(&expr);
+        let res = codegen::run_jit(&func);
+        assert_eq!(expected, res);
+    }
+}
+
+#[test]
+fn codegen_if() {
+    let mut lexer = Lexer::new("if 69 { 1337 } else { 42 } + 42".chars().peekable()).peekable();
+    let expr = parse_expr(&mut lexer);
+    let func = compile(&expr);
+    let res = codegen::run_jit(&func);
+    assert_eq!(1337 + 42, res);
 }

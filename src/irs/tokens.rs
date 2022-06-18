@@ -12,6 +12,8 @@ pub enum TokenKind {
     Asterix,
     Minus,
     Slash,
+    Bang,
+    Equal,
 
     LeftParen,
     RightParen,
@@ -19,6 +21,10 @@ pub enum TokenKind {
     RightCurly,
     Less,
     Greater,
+
+    BangEqual,
+    LessEqual,
+    GreaterEqual,
 
     If,
     Else,

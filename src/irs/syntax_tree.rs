@@ -1,10 +1,11 @@
-use crate::common::{BinaryOperator, Span};
+use crate::common::{BinaryOperator, Span, UnaryOperator};
 
 #[derive(Debug, Clone)]
 pub enum Expr {
     Grouping(Grouping),
     Int(Span, i64),
     BinaryOperation(Box<BinaryOperation>),
+    UnaryOperation(Box<UnaryOperation>),
     If(Box<If>),
 }
 
@@ -29,4 +30,11 @@ pub struct BinaryOperation {
     pub rhs: Expr,
     pub op_span: Span,
     pub operator: BinaryOperator,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnaryOperation {
+    pub op_span: Span,
+    pub operand: Expr,
+    pub operator: UnaryOperator,
 }
