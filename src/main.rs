@@ -8,11 +8,13 @@ use std::{
     process,
 };
 
+mod diagnostic;
 mod irs;
 mod stages;
 
-pub use irs::*;
-pub use stages::*;
+pub use diagnostic::Diagnostic;
+pub use irs::{bytecode, common, syntax_tree, tokens};
+pub use stages::{codegen, compilation, lexing, parsing};
 
 #[cfg(test)]
 mod tests;
@@ -57,7 +59,9 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
             break Ok(());
         }
 
-        let mut lexer = lexing::Lexer::new(line.chars().peekable()).peekable();
+        let mut lexer_diagnostics = Vec::new();
+        let mut lexer =
+            lexing::Lexer::new(line.chars().peekable(), &mut lexer_diagnostics).peekable();
 
         if mode == Mode::Lex {
             for token in lexer {
@@ -66,9 +70,28 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        let expr = parsing::parse_expr(&mut lexer);
-        if let Some(token) = lexer.peek() {
-            println!("Warning: expected EOF, found {:?}", token);
+        let mut parsing_diagnostics = Vec::new();
+        let expr = parsing::Parser::new(&mut lexer, &mut parsing_diagnostics).expr();
+        if let Some(span) = lexer.peek().map(|t| t.span) {
+            if parsing_diagnostics.is_empty() {
+                lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
+            }
+        }
+
+        lexer_diagnostics.append(&mut parsing_diagnostics);
+        let diagnostics = lexer_diagnostics;
+
+        if !diagnostics.is_empty() {
+            let mut got_err = false;
+            for d in diagnostics {
+                eprintln!("{}", d);
+                if d.level == diagnostic::Level::Error {
+                    got_err = true;
+                }
+            }
+            if got_err {
+                continue;
+            }
         }
 
         if mode == Mode::Parse {

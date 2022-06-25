@@ -7,6 +7,9 @@ pub enum Expr {
     BinaryOperation(Box<BinaryOperation>),
     UnaryOperation(Box<UnaryOperation>),
     If(Box<If>),
+
+    /// Used when the parser encounters invalid tokens
+    Error,
 }
 
 #[derive(Debug, Clone)]

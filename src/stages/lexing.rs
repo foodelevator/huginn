@@ -3,14 +3,16 @@ use std::iter::Peekable;
 use crate::{
     common::Span,
     tokens::{Token, TokenKind},
+    Diagnostic,
 };
 
-pub struct Lexer<I: Iterator<Item = char>> {
+pub struct Lexer<'d, I: Iterator<Item = char>> {
     input: Peekable<I>,
     index: usize,
+    diagnostics: &'d mut Vec<Diagnostic>,
 }
 
-impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
+impl<'d, I: Iterator<Item = char>> Iterator for Lexer<'d, I> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -23,9 +25,17 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
     }
 }
 
-impl<I: Iterator<Item = char>> Lexer<I> {
-    pub fn new(input: Peekable<I>) -> Self {
-        Self { input, index: 0 }
+impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
+    pub fn new(input: Peekable<I>, diagnostics: &'d mut Vec<Diagnostic>) -> Self {
+        Self {
+            input,
+            index: 0,
+            diagnostics,
+        }
+    }
+
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        self.diagnostics.as_ref()
     }
 
     fn advance(&mut self) -> Option<Token> {
@@ -49,38 +59,16 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             ws if ws.is_whitespace() => return None,
             d @ '0'..='9' => self.lex_number(d),
             c if c.is_alphabetic() => self.lex_word(c),
-            c => todo!("Found not yet lexable char {}", c),
+            c => {
+                self.unexpected_char(c);
+                return None;
+            }
         };
 
         Some(Token {
             span: Span::new(start..self.index),
             kind,
         })
-    }
-
-    fn next_if_eq(&mut self, c: char) -> Option<char> {
-        self.next_if(|ch| c == ch)
-    }
-
-    fn next_if(&mut self, p: impl Fn(char) -> bool) -> Option<char> {
-        let ch = self.peek_char()?;
-        if p(ch) {
-            self.next_char()
-        } else {
-            None
-        }
-    }
-
-    fn peek_char(&mut self) -> Option<char> {
-        self.input.peek().copied()
-    }
-
-    fn next_char(&mut self) -> Option<char> {
-        let c = self.input.next();
-        if c.is_some() {
-            self.index += 1
-        }
-        c
     }
 
     fn lex_word(&mut self, first: char) -> TokenKind {
@@ -140,5 +128,37 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
 
         TokenKind::Int(value)
+    }
+
+    fn next_if_eq(&mut self, c: char) -> Option<char> {
+        self.next_if(|ch| c == ch)
+    }
+
+    fn next_if(&mut self, p: impl Fn(char) -> bool) -> Option<char> {
+        let ch = self.peek_char()?;
+        if p(ch) {
+            self.next_char()
+        } else {
+            None
+        }
+    }
+
+    fn peek_char(&mut self) -> Option<char> {
+        self.input.peek().copied()
+    }
+
+    fn next_char(&mut self) -> Option<char> {
+        let c = self.input.next();
+        if c.is_some() {
+            self.index += 1
+        }
+        c
+    }
+
+    fn unexpected_char(&mut self, _c: char) {
+        self.diagnostics.push(Diagnostic::error(
+            Span::single(self.index),
+            "Unexpected char",
+        ))
     }
 }

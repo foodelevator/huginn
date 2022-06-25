@@ -41,6 +41,7 @@ impl Compiler {
             Expr::BinaryOperation(bin_op) => self.compile_bin_op(bin_op),
             Expr::UnaryOperation(bin_op) => self.compile_unary_op(bin_op),
             Expr::If(if_) => self.compile_if(if_),
+            Expr::Error => unreachable!(),
         }
     }
 

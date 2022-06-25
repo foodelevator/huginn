@@ -1,3 +1,4 @@
+use std::fmt;
 use std::marker::Copy;
 use std::ops::{Deref, Range};
 
@@ -15,6 +16,17 @@ impl Span {
         }
     }
 
+    pub fn single(start: usize) -> Self {
+        Self {
+            start,
+            end: start + 1,
+        }
+    }
+
+    pub fn unknown() -> Self {
+        Self::new(0..0)
+    }
+
     pub fn pos(self) -> Range<usize> {
         Range {
             start: self.start,
@@ -28,6 +40,12 @@ impl Deref for Span {
 
     fn deref(&self) -> &Self::Target {
         unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)
     }
 }
 

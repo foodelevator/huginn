@@ -6,7 +6,7 @@ use crate::{
     common::BinaryOperator,
     compilation::compile,
     lexing::Lexer,
-    parsing::parse_expr,
+    parsing::Parser,
     syntax_tree::{BinaryOperation, Expr, Grouping},
     tokens::TokenKind,
 };
@@ -18,10 +18,12 @@ fn lex() {
     (
     ";
 
-    let tokens: Vec<_> = Lexer::new(input.chars().peekable())
+    let mut d = vec![];
+    let tokens: Vec<_> = Lexer::new(input.chars().peekable(), &mut d)
         .map(|token| token.kind)
         .collect();
 
+    assert!(d.is_empty(), "{:?}", d);
     assert_eq!(
         tokens,
         vec![
@@ -49,9 +51,14 @@ fn lex() {
 
 #[test]
 fn parse_basic_arithmetic() {
-    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable()).peekable();
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
+    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    assert_eq!(lexer.next(), None);
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
-        parse_expr(&mut lexer),
+        expr,
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::BinaryOperation(box BinaryOperation {
                 lhs: Expr::Int(_, 1),
@@ -74,11 +81,15 @@ fn parse_basic_arithmetic() {
             ..
         }),
     );
-    assert_eq!(lexer.next(), None);
 
-    let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable()).peekable();
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable(), &mut d1).peekable();
+    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    assert_eq!(lexer.next(), None);
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
-        parse_expr(&mut lexer),
+        expr,
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::BinaryOperation(box BinaryOperation {
                 lhs: Expr::Int(_, 1),
@@ -91,11 +102,15 @@ fn parse_basic_arithmetic() {
             ..
         })
     );
-    assert_eq!(lexer.next(), None);
 
-    let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable()).peekable();
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable(), &mut d1).peekable();
+    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    assert_eq!(lexer.next(), None);
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
-        parse_expr(&mut lexer),
+        expr,
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::Grouping(Grouping {
                 expr: box Expr::BinaryOperation(box BinaryOperation {
@@ -111,11 +126,15 @@ fn parse_basic_arithmetic() {
             ..
         })
     );
-    assert_eq!(lexer.next(), None);
 
-    let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable()).peekable();
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable(), &mut d1).peekable();
+    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    assert_eq!(lexer.next(), None);
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
-        parse_expr(&mut lexer),
+        expr,
         Expr::BinaryOperation(box BinaryOperation {
             lhs: Expr::Int(_, 1),
             operator: BinaryOperator::Multiply,
@@ -131,14 +150,17 @@ fn parse_basic_arithmetic() {
             ..
         })
     );
-    assert_eq!(lexer.next(), None);
 }
 
 #[test]
 fn compile_basic_arithmetic() {
-    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable()).peekable();
-    let expr = parse_expr(&mut lexer);
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
+    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let expr = parser.expr();
     let func = compile(&expr);
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
     assert_eq!(func.blocks.len(), 1);
     assert_matches!(
         &func.blocks[0].instrs[..],
@@ -189,31 +211,31 @@ fn compile_basic_arithmetic() {
     );
 }
 
-#[test]
-fn codegen_basic_arithmetic() {
-    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable()).peekable();
-    let expr = parse_expr(&mut lexer);
+fn test_code(code: &'static str, expected: i64) {
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
+    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let expr = parser.expr();
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
     let func = compile(&expr);
     let res = codegen::run_jit(&func);
-    assert_eq!(1 + 2 * 3 - 4 / 5, res);
+    assert_eq!(expected, res);
+}
+
+#[test]
+fn codegen_basic_arithmetic() {
+    test_code("1 + 2 * 3 - 4 / 5", 1 + 2 * 3 - 4 / 5);
 }
 
 #[test]
 fn codegen_booleans() {
     for (code, expected) in [("1 <= 2", 1), ("!-2", 0), ("3 = 1 + 2", 1)] {
-        let mut lexer = Lexer::new(code.chars().peekable()).peekable();
-        let expr = parse_expr(&mut lexer);
-        let func = compile(&expr);
-        let res = codegen::run_jit(&func);
-        assert_eq!(expected, res);
+        test_code(code, expected);
     }
 }
 
 #[test]
 fn codegen_if() {
-    let mut lexer = Lexer::new("if 69 { 1337 } else { 42 } + 42".chars().peekable()).peekable();
-    let expr = parse_expr(&mut lexer);
-    let func = compile(&expr);
-    let res = codegen::run_jit(&func);
-    assert_eq!(1337 + 42, res);
+    test_code("if 69 { 1337 } else { 42 } + 42", 1337 + 42);
 }
