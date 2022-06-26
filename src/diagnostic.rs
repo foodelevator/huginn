@@ -39,14 +39,29 @@ impl Diagnostic {
             message,
         }
     }
+
+    pub fn display<'c>(&self, code: &'c str) -> DisplayDiagnostic<'_, 'c> {
+        DisplayDiagnostic {
+            diagnostic: self,
+            code,
+        }
+    }
 }
 
-impl fmt::Display for Diagnostic {
+pub struct DisplayDiagnostic<'d, 'c> {
+    diagnostic: &'d Diagnostic,
+    code: &'c str,
+}
+
+impl fmt::Display for DisplayDiagnostic<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let d = self.diagnostic;
         write!(
             f,
-            "{}: {}\n --> {}",
-            self.level, self.message, self.location
+            "{}: {}\n{}",
+            d.level,
+            d.message,
+            d.location.display(self.code)
         )
     }
 }
@@ -57,8 +72,8 @@ impl fmt::Display for Level {
             f,
             "{}",
             match self {
-                Self::Error => "\x1b[31merror\x1b[0m",
-                Self::Warning => "\x1b[33mwarning\x1b[0m",
+                Self::Error => "\x1b[31;1merror\x1b[0m",
+                Self::Warning => "\x1b[33;1mwarning\x1b[0m",
             }
         )
     }
