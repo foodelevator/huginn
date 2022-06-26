@@ -1,12 +1,19 @@
+use std::collections::HashMap;
+
 use crate::{
     bytecode::{Block, BlockId, Function, Instr, Value},
-    syntax_tree::{BinaryOperation, Expr, Grouping, If, UnaryOperation},
+    syntax_tree::{Assign, Assignee, BinaryOperation, Expr, Grouping, If, Stmt, UnaryOperation},
 };
 
-pub fn compile(expr: &Expr) -> Function {
+pub fn compile(stmts: &[Stmt]) -> Function {
+    assert!(!stmts.is_empty());
+
     let mut compiler = Compiler::new();
-    let res = compiler.compile_expr(expr);
-    compiler.emit(Instr::Return(res));
+    for stmt in &stmts[..stmts.len() - 1] {
+        compiler.stmt(stmt);
+    }
+    let ret = compiler.stmt(&stmts[stmts.len() - 1]);
+    compiler.emit(Instr::Return(ret));
     Function {
         blocks: compiler.blocks,
     }
@@ -17,6 +24,7 @@ struct Compiler {
     blocks: Vec<Block>,
     curr_block: BlockId,
     var_counter: Value,
+    scope: HashMap<String, Value>,
 }
 
 impl Compiler {
@@ -25,57 +33,97 @@ impl Compiler {
             blocks: Vec::new(),
             curr_block: 0,
             var_counter: 0,
+            scope: HashMap::new(),
         };
         this.create_block();
         this
     }
 
-    fn compile_expr(&mut self, expr: &Expr) -> Value {
-        match expr {
-            Expr::Grouping(Grouping { expr, .. }) => self.compile_expr(expr),
-            &Expr::Int(_, val) => {
+    // TODO: this return value should just be a temporary hack. Statements don't evaluate to
+    // values.
+    fn stmt(&mut self, stmt: &Stmt) -> Value {
+        match stmt {
+            Stmt::Expr(expr) => {
                 let dest = self.var();
-                self.emit(Instr::Const { dest, val });
+                self.rval(expr, dest);
                 dest
             }
-            Expr::BinaryOperation(bin_op) => self.compile_bin_op(bin_op),
-            Expr::UnaryOperation(bin_op) => self.compile_unary_op(bin_op),
-            Expr::If(if_) => self.compile_if(if_),
+            Stmt::Assign(Assign {
+                assignee, value, ..
+            }) => {
+                let dest = match assignee {
+                    Assignee::Expr(expr) => self.lval(expr),
+                    Assignee::Let(ident) => {
+                        let var = self.var();
+                        self.scope.insert(ident.name.clone(), var);
+                        var
+                    }
+                };
+                self.rval(value, dest);
+                dest
+            }
+        }
+    }
+
+    fn lval(&mut self, expr: &Expr) -> Value {
+        match expr {
+            Expr::Grouping(Grouping { expr, .. }) => self.lval(expr),
+            Expr::Int(_, _) | Expr::BinaryOperation(_) | Expr::If(_) | Expr::UnaryOperation(_) => {
+                // TODO: fix error reporting
+                panic!("Expression {:?} is not an lvalue", expr)
+            }
+            Expr::Ident(ident) => *self.scope.get(&ident.name).expect("Unkown symbol"),
             Expr::Error => unreachable!(),
         }
     }
 
-    fn compile_bin_op(&mut self, bin_op: &BinaryOperation) -> Value {
-        let dest = self.var();
-        let lhs = self.compile_expr(&bin_op.lhs);
-        let rhs = self.compile_expr(&bin_op.rhs);
+    fn rval(&mut self, expr: &Expr, dest: Value) {
+        match expr {
+            Expr::Grouping(Grouping { expr, .. }) => self.rval(expr, dest),
+            &Expr::Int(_, val) => {
+                self.emit(Instr::Const { dest, val });
+            }
+            Expr::BinaryOperation(bin_op) => self.bin_op(bin_op, dest),
+            Expr::UnaryOperation(bin_op) => self.unary_op(bin_op, dest),
+            Expr::If(if_) => self.if_(if_, dest),
+            Expr::Ident(ident) => {
+                let src = *self.scope.get(&ident.name).expect("Unknown symbol");
+                self.emit(Instr::Mov { dest, src })
+            }
+            Expr::Error => unreachable!(),
+        }
+    }
+
+    fn bin_op(&mut self, bin_op: &BinaryOperation, dest: Value) {
+        let lhs = self.var();
+        self.rval(&bin_op.lhs, lhs);
+        let rhs = self.var();
+        self.rval(&bin_op.rhs, rhs);
         self.emit(Instr::BinaryOperator {
             dest,
             lhs,
             rhs,
             operator: bin_op.operator,
         });
-        dest
     }
 
-    fn compile_unary_op(&mut self, unary_op: &UnaryOperation) -> Value {
-        let dest = self.var();
-        let operand = self.compile_expr(&unary_op.operand);
+    fn unary_op(&mut self, unary_op: &UnaryOperation, dest: Value) {
+        let operand = self.var();
+        self.rval(&unary_op.operand, operand);
         let operator = unary_op.operator;
         self.emit(Instr::UnaryOperator {
             dest,
             operand,
             operator,
         });
-        dest
     }
 
-    fn compile_if(&mut self, if_: &If) -> Value {
-        let cond = self.compile_expr(&if_.cond);
+    fn if_(&mut self, if_: &If, dest: Value) {
+        let cond = self.var();
+        self.rval(&if_.cond, cond);
         let then = self.create_block();
         let else_ = self.create_block();
         let done = self.create_block();
-        let dest = self.var();
         self.emit(Instr::JumpIf {
             cond,
             block_id: then,
@@ -83,18 +131,14 @@ impl Compiler {
         self.emit(Instr::Jump(else_));
 
         self.switch_to_block(then);
-        let res = self.compile_expr(&if_.then);
-        self.emit(Instr::Mov { dest, src: res });
+        self.rval(&if_.then, dest);
         self.emit(Instr::Jump(done));
 
         self.switch_to_block(else_);
-        let res = self.compile_expr(&if_.else_);
-        self.emit(Instr::Mov { dest, src: res });
+        self.rval(&if_.else_, dest);
         self.emit(Instr::Jump(done));
 
         self.switch_to_block(done);
-
-        dest
     }
 
     fn emit(&mut self, instr: Instr) {

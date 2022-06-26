@@ -71,7 +71,7 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
         }
 
         let mut parsing_diagnostics = Vec::new();
-        let expr = parsing::Parser::new(&mut lexer, &mut parsing_diagnostics).expr();
+        let stmt = parsing::Parser::new(&mut lexer, &mut parsing_diagnostics).stmt();
         if let Some(span) = lexer.peek().map(|t| t.span) {
             if parsing_diagnostics.is_empty() {
                 lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
@@ -95,11 +95,11 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
         }
 
         if mode == Mode::Parse {
-            println!("{:#?}", expr);
+            println!("{:#?}", stmt);
             continue;
         }
 
-        let func = compilation::compile(&expr);
+        let func = compilation::compile(&[stmt]);
 
         if mode == Mode::Bytecode {
             for (i, block) in func.blocks.iter().enumerate() {

@@ -157,8 +157,8 @@ fn compile_basic_arithmetic() {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let expr = parser.expr();
-    let func = compile(&expr);
+    let stmt = parser.stmt();
+    let func = compile(&[stmt]);
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     assert_eq!(func.blocks.len(), 1);
@@ -215,10 +215,10 @@ fn test_code(code: &'static str, expected: i64) {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let expr = parser.expr();
+    let stmt = parser.stmt();
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    let func = compile(&expr);
+    let func = compile(&[stmt]);
     let res = codegen::run_jit(&func);
     assert_eq!(expected, res);
 }

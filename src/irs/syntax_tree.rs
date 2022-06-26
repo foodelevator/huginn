@@ -1,4 +1,23 @@
-use crate::common::{BinaryOperator, Span, UnaryOperator};
+use crate::common::{BinaryOperator, Ident, Span, UnaryOperator};
+
+#[derive(Debug, Clone)]
+pub enum Stmt {
+    Expr(Expr),
+    Assign(Assign),
+}
+
+#[derive(Debug, Clone)]
+pub struct Assign {
+    pub assignee: Assignee,
+    pub assign_sign: Span,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub enum Assignee {
+    Expr(Expr),
+    Let(Ident),
+}
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -7,6 +26,7 @@ pub enum Expr {
     BinaryOperation(Box<BinaryOperation>),
     UnaryOperation(Box<UnaryOperation>),
     If(Box<If>),
+    Ident(Ident),
 
     /// Used when the parser encounters invalid tokens
     Error,

@@ -49,6 +49,12 @@ impl fmt::Display for Span {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ident {
+    pub span: Span,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum BinaryOperator {
     Add,

@@ -53,9 +53,11 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
             '!' if self.next_if_eq('=').is_some() => TokenKind::BangEqual,
             '!' => TokenKind::Bang,
             '<' if self.next_if_eq('=').is_some() => TokenKind::LessEqual,
+            '<' if self.next_if_eq('-').is_some() => TokenKind::LeftArrow,
             '<' => TokenKind::Less,
             '>' if self.next_if_eq('=').is_some() => TokenKind::GreaterEqual,
             '>' => TokenKind::Greater,
+            ';' => TokenKind::Semicolon,
             ws if ws.is_whitespace() => return None,
             d @ '0'..='9' => self.lex_number(d),
             c if c.is_alphabetic() => self.lex_word(c),
@@ -87,7 +89,8 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
         match &*word {
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
-            _ => todo!("Cannot yet lex identifiers"),
+            "let" => TokenKind::Let,
+            ident => TokenKind::Ident(ident.to_string()),
         }
     }
 

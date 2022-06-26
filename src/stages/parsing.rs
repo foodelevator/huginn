@@ -1,8 +1,8 @@
 use std::iter::Peekable;
 
 use crate::{
-    common::{BinaryOperator, Span, UnaryOperator},
-    syntax_tree::{BinaryOperation, Expr, Grouping, If, UnaryOperation},
+    common::{BinaryOperator, Ident, Span, UnaryOperator},
+    syntax_tree::{Assign, Assignee, BinaryOperation, Expr, Grouping, If, Stmt, UnaryOperation},
     tokens::{Token, TokenKind},
     Diagnostic,
 };
@@ -18,11 +18,11 @@ macro_rules! assert_kind {
             Some(Token { span, kind: $kind }) => span,
             Some(token) => {
                 let span = token.span;
-                $self.unexpected_token(token);
+                $self.unexpected_token(Some(&token));
                 span
             }
             None => {
-                $self.unexpected_eof();
+                $self.unexpected_token(None);
                 Span::unknown()
             }
         }
@@ -32,6 +32,48 @@ macro_rules! assert_kind {
 impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
     pub fn new(input: &'i mut Peekable<I>, diagnostics: &'d mut Vec<Diagnostic>) -> Self {
         Self { input, diagnostics }
+    }
+
+    pub fn stmt(&mut self) -> Stmt {
+        let assignee = match self.input.peek() {
+            Some(Token {
+                kind: TokenKind::Let,
+                ..
+            }) => {
+                self.input.next();
+                let ident = match self.input.next() {
+                    Some(Token {
+                        kind: TokenKind::Ident(name),
+                        span,
+                    }) => Ident { span, name },
+                    _ => todo!(),
+                };
+                Assignee::Let(ident)
+            }
+            _ => Assignee::Expr(self.expr()),
+        };
+        match self.input.peek() {
+            Some(&Token {
+                span,
+                kind: TokenKind::LeftArrow,
+            }) => {
+                self.input.next();
+                let value = self.expr();
+                Stmt::Assign(Assign {
+                    assignee,
+                    assign_sign: span,
+                    value,
+                })
+            }
+            token => match assignee {
+                Assignee::Expr(expr) => Stmt::Expr(expr),
+                Assignee::Let(_) => {
+                    let token = token.cloned();
+                    self.unexpected_token(token.as_ref());
+                    Stmt::Expr(Expr::Error)
+                }
+            },
+        }
     }
 
     pub fn expr(&mut self) -> Expr {
@@ -108,8 +150,11 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 span,
                 kind: TokenKind::Int(val),
             }) => Expr::Int(span, val),
-            Some(token) => self.unexpected_token(token),
-            None => self.unexpected_eof(),
+            Some(Token {
+                span,
+                kind: TokenKind::Ident(name),
+            }) => Expr::Ident(Ident { span, name }),
+            token => self.unexpected_token(token.as_ref()),
         }
     }
 
@@ -167,17 +212,16 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
         lhs
     }
 
-    fn unexpected_token(&mut self, t: Token) -> Expr {
-        self.diagnostics
-            .push(Diagnostic::error(t.span, "Unexpected token"));
-        Expr::Error
-    }
-
-    fn unexpected_eof(&mut self) -> Expr {
-        self.diagnostics.push(Diagnostic::error(
-            Span::unknown(),
-            "Expected token, found EOF",
-        ));
+    fn unexpected_token(&mut self, token: Option<&Token>) -> Expr {
+        if let Some(t) = token {
+            self.diagnostics
+                .push(Diagnostic::error(t.span, "Unexpected token"));
+        } else {
+            self.diagnostics.push(Diagnostic::error(
+                Span::unknown(),
+                "Expected token, found EOF",
+            ));
+        }
         Expr::Error
     }
 }

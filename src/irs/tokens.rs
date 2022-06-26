@@ -1,12 +1,12 @@
 use crate::common::Span;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub span: Span,
     pub kind: TokenKind,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     Plus,
     Asterix,
@@ -14,6 +14,7 @@ pub enum TokenKind {
     Slash,
     Bang,
     Equal,
+    Semicolon,
 
     LeftParen,
     RightParen,
@@ -26,8 +27,15 @@ pub enum TokenKind {
     LessEqual,
     GreaterEqual,
 
+    LeftArrow,
+
     If,
     Else,
+    Let,
+
+    Ident(String),
 
     Int(i64),
+
+    Invalid,
 }
