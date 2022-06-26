@@ -1,9 +1,17 @@
 use crate::common::{BinaryOperator, Ident, Span, UnaryOperator};
 
 #[derive(Debug, Clone)]
+pub struct Block {
+    pub left_curly: Span,
+    pub stmts: Vec<Stmt>,
+    pub right_curly: Span,
+}
+
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Expr(Expr),
     Assign(Assign),
+    If(IfStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -20,16 +28,21 @@ pub enum Assignee {
 }
 
 #[derive(Debug, Clone)]
+pub struct IfStmt {
+    pub if_span: Span,
+    pub cond: Expr,
+    pub then: Block,
+    pub else_: Option<(Span, Block)>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expr {
     Grouping(Grouping),
     Int(Span, i64),
     BinaryOperation(Box<BinaryOperation>),
     UnaryOperation(Box<UnaryOperation>),
-    If(Box<If>),
+    If(Box<IfExpr>),
     Ident(Ident),
-
-    /// Used when the parser encounters invalid tokens
-    Error,
 }
 
 #[derive(Debug, Clone)]
@@ -40,11 +53,13 @@ pub struct Grouping {
 }
 
 #[derive(Debug, Clone)]
-pub struct If {
+pub struct IfExpr {
     pub if_span: Span,
     pub cond: Expr,
-    pub then: Expr,  // TODO: make Block
-    pub else_: Expr, // TODO: make Option<Block>
+    pub then_span: Span,
+    pub then: Expr,
+    pub else_span: Span,
+    pub else_: Expr,
 }
 
 #[derive(Debug, Clone)]

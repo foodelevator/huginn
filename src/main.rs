@@ -1,9 +1,10 @@
 #![feature(box_patterns, assert_matches)]
 
 use std::collections::HashMap;
-use std::env;
 use std::error::Error;
 use std::io::BufRead;
+use std::ops::ControlFlow;
+use std::{env, fs};
 use std::{
     io::{stdin, stdout, Write},
     process,
@@ -24,7 +25,7 @@ mod tests;
 enum Mode {
     Lex,
     Parse,
-    Object,
+    Build,
     Bytecode,
     Run,
 }
@@ -32,20 +33,118 @@ enum Mode {
 fn main() {
     let args = env::args();
     let mut mode = Mode::Run;
-    for arg in args {
+    let mut path = None;
+    for arg in args.skip(1) {
         match &*arg {
             "lex" => mode = Mode::Lex,
             "parse" => mode = Mode::Parse,
             "bytecode" => mode = Mode::Bytecode,
-            "object" => mode = Mode::Object,
-            _ => {}
+            "build" => mode = Mode::Build,
+            "run" => mode = Mode::Run,
+            name => path = Some(name.to_string()),
         }
     }
 
-    if let Err(err) = repl(mode) {
-        eprintln!("{}", err);
-        process::exit(1);
+    if let Some(path) = path {
+        match fs::read_to_string(path) {
+            Ok(src_code) => {
+                if let Err(err) = run(&src_code, mode, &mut HashMap::new()) {
+                    eprintln!("{}", err);
+                    process::exit(1);
+                }
+            }
+            Err(err) => {
+                eprintln!("{}", err);
+                process::exit(1);
+            }
+        }
+    } else {
+        if let Err(err) = repl(mode) {
+            eprintln!("{}", err);
+            process::exit(1);
+        }
     }
+}
+
+fn run(
+    src: &str,
+    mode: Mode,
+    scope: &mut HashMap<String, i64>,
+) -> Result<ControlFlow<()>, Box<dyn Error>> {
+    let mut lexer_diagnostics = Vec::new();
+    let mut lexer = lexing::Lexer::new(src.chars().peekable(), &mut lexer_diagnostics).peekable();
+
+    if mode == Mode::Lex {
+        for token in lexer {
+            println!("{:?}", token);
+        }
+        return Ok(ControlFlow::Continue(()));
+    }
+
+    let mut parsing_diagnostics = Vec::new();
+    let stmt = parsing::Parser::new(&mut lexer, &mut parsing_diagnostics).stmt();
+    if let Some(span) = lexer.peek().map(|t| t.span) {
+        if parsing_diagnostics.is_empty() {
+            lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
+        }
+    }
+
+    lexer_diagnostics.append(&mut parsing_diagnostics);
+    let diagnostics = lexer_diagnostics;
+
+    if !diagnostics.is_empty() {
+        for d in diagnostics {
+            eprintln!("{}", d.display(src));
+        }
+    }
+
+    let stmt = if let Some(stmt) = stmt {
+        stmt
+    } else {
+        return Ok(ControlFlow::Continue(()));
+    };
+
+    if mode == Mode::Parse {
+        println!("{:#?}", stmt);
+        return Ok(ControlFlow::Continue(()));
+    }
+
+    let func = compilation::compile_stmt(&stmt, &scope);
+
+    if mode == Mode::Bytecode {
+        for (i, block) in func.blocks.iter().enumerate() {
+            println!("block{}:", i);
+            for instr in &block.instrs {
+                println!("    {:?}", instr);
+            }
+        }
+        return Ok(ControlFlow::Continue(()));
+    }
+
+    if mode == Mode::Build {
+        codegen::output_to_file(&func, "output.o");
+        return Ok(ControlFlow::Break(()));
+    }
+
+    if mode == Mode::Run {
+        let res = codegen::run_jit(&func);
+        if let syntax_tree::Stmt::Assign(assign) = stmt {
+            match assign.assignee {
+                syntax_tree::Assignee::Let(common::Ident { name, .. })
+                | syntax_tree::Assignee::Expr(syntax_tree::Expr::Ident(common::Ident {
+                    name,
+                    ..
+                })) => {
+                    scope.insert(name, res);
+                }
+                _ => {}
+            }
+        }
+        println!("{}", res);
+        return Ok(ControlFlow::Continue(()));
+    }
+
+    unimplemented!("Unimplemented mode {:?}", mode)
 }
 
 fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
@@ -61,81 +160,9 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
             break Ok(());
         }
 
-        let mut lexer_diagnostics = Vec::new();
-        let mut lexer =
-            lexing::Lexer::new(line.chars().peekable(), &mut lexer_diagnostics).peekable();
-
-        if mode == Mode::Lex {
-            for token in lexer {
-                println!("{:?}", token);
-            }
-            continue;
+        match run(&line, mode, &mut scope)? {
+            ControlFlow::Continue(_) => continue,
+            ControlFlow::Break(_) => break Ok(()),
         }
-
-        let mut parsing_diagnostics = Vec::new();
-        let stmt = parsing::Parser::new(&mut lexer, &mut parsing_diagnostics).stmt();
-        if let Some(span) = lexer.peek().map(|t| t.span) {
-            if parsing_diagnostics.is_empty() {
-                lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
-            }
-        }
-
-        lexer_diagnostics.append(&mut parsing_diagnostics);
-        let diagnostics = lexer_diagnostics;
-
-        if !diagnostics.is_empty() {
-            let mut got_err = false;
-            for d in diagnostics {
-                eprintln!("{}", d);
-                if d.level == diagnostic::Level::Error {
-                    got_err = true;
-                }
-            }
-            if got_err {
-                continue;
-            }
-        }
-
-        if mode == Mode::Parse {
-            println!("{:#?}", stmt);
-            continue;
-        }
-
-        let func = compilation::compile_with_scope(&[stmt.clone()], &scope);
-
-        if mode == Mode::Bytecode {
-            for (i, block) in func.blocks.iter().enumerate() {
-                println!("block{}:", i);
-                for instr in &block.instrs {
-                    println!("    {:?}", instr);
-                }
-            }
-            continue;
-        }
-
-        if mode == Mode::Object {
-            codegen::output_to_file(&func, "output.o");
-            return Ok(());
-        }
-
-        if mode == Mode::Run {
-            let res = codegen::run_jit(&func);
-            if let syntax_tree::Stmt::Assign(assign) = stmt {
-                match assign.assignee {
-                    syntax_tree::Assignee::Let(common::Ident { name, .. })
-                    | syntax_tree::Assignee::Expr(syntax_tree::Expr::Ident(common::Ident {
-                        name,
-                        ..
-                    })) => {
-                        scope.insert(name, res);
-                    }
-                    _ => {}
-                }
-            }
-            println!("{}", res);
-            continue;
-        }
-
-        unimplemented!("Unimplemented mode {:?}", mode)
     }
 }

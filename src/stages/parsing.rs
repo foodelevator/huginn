@@ -2,7 +2,10 @@ use std::iter::Peekable;
 
 use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
-    syntax_tree::{Assign, Assignee, BinaryOperation, Expr, Grouping, If, Stmt, UnaryOperation},
+    syntax_tree::{
+        Assign, Assignee, BinaryOperation, Block, Expr, Grouping, IfExpr, IfStmt, Stmt,
+        UnaryOperation,
+    },
     tokens::{Token, TokenKind},
     Diagnostic,
 };
@@ -12,18 +15,17 @@ pub struct Parser<'i, 'd, I: Iterator<Item = Token>> {
     diagnostics: &'d mut Vec<Diagnostic>,
 }
 
-macro_rules! assert_kind {
+macro_rules! assert_next {
     ($self:expr, $kind:pat) => {
         match $self.input.next() {
-            Some(Token { span, kind: $kind }) => span,
+            Some(Token { span, kind: $kind }) => Some(span),
             Some(token) => {
-                let span = token.span;
                 $self.unexpected_token(Some(&token));
-                span
+                None
             }
             None => {
                 $self.unexpected_token(None);
-                Span::unknown()
+                None
             }
         }
     };
@@ -34,8 +36,31 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
         Self { input, diagnostics }
     }
 
-    pub fn stmt(&mut self) -> Stmt {
-        let assignee = match self.input.peek() {
+    pub fn block(&mut self) -> Option<Block> {
+        let left_curly = assert_next!(self, TokenKind::LeftCurly)?;
+        let mut stmts = Vec::new();
+        loop {
+            match self.input.peek() {
+                Some(Token {
+                    kind: TokenKind::RightCurly,
+                    ..
+                }) => break,
+                _ => {
+                    stmts.push(self.stmt()?);
+                    assert_next!(self, TokenKind::Semicolon)?;
+                }
+            }
+        }
+        let right_curly = assert_next!(self, TokenKind::RightCurly)?;
+        Some(Block {
+            left_curly,
+            stmts,
+            right_curly,
+        })
+    }
+
+    pub fn stmt(&mut self) -> Option<Stmt> {
+        match self.input.peek() {
             Some(Token {
                 kind: TokenKind::Let,
                 ..
@@ -48,39 +73,68 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                     }) => Ident { span, name },
                     _ => todo!(),
                 };
-                Assignee::Let(ident)
+                let assign_sign = assert_next!(self, TokenKind::LeftArrow)?;
+                let value = self.expr()?;
+                Some(Stmt::Assign(Assign {
+                    assignee: Assignee::Let(ident),
+                    assign_sign,
+                    value,
+                }))
             }
-            _ => Assignee::Expr(self.expr()),
-        };
-        match self.input.peek() {
             Some(&Token {
+                kind: TokenKind::If,
                 span,
-                kind: TokenKind::LeftArrow,
             }) => {
                 self.input.next();
-                let value = self.expr();
-                Stmt::Assign(Assign {
-                    assignee,
-                    assign_sign: span,
-                    value,
-                })
+                self.finish_if_stmt(span)
             }
-            token => match assignee {
-                Assignee::Expr(expr) => Stmt::Expr(expr),
-                Assignee::Let(_) => {
-                    let token = token.cloned();
-                    self.unexpected_token(token.as_ref());
-                    Stmt::Expr(Expr::Error)
+            _ => {
+                let expr = self.expr()?;
+                if let Some(&Token {
+                    kind: TokenKind::LeftArrow,
+                    span: assign_sign,
+                }) = self.input.peek()
+                {
+                    let value = self.expr()?;
+                    Some(Stmt::Assign(Assign {
+                        assignee: Assignee::Expr(expr),
+                        assign_sign,
+                        value,
+                    }))
+                } else {
+                    Some(Stmt::Expr(expr))
                 }
-            },
+            }
         }
     }
 
-    pub fn expr(&mut self) -> Expr {
+    pub fn finish_if_stmt(&mut self, if_span: Span) -> Option<Stmt> {
+        let cond = self.expr()?;
+        let then = self.block()?;
+        let else_ = match self.input.peek() {
+            Some(&Token {
+                kind: TokenKind::Else,
+                span,
+            }) => {
+                self.input.next();
+                let else_ = self.block()?;
+                Some((span, else_))
+            }
+            _ => None,
+        };
+        Some(Stmt::If(IfStmt {
+            if_span,
+            cond,
+            then,
+            else_,
+        }))
+    }
+
+    pub fn expr(&mut self) -> Option<Expr> {
         self.comparison()
     }
 
-    fn comparison(&mut self) -> Expr {
+    fn comparison(&mut self) -> Option<Expr> {
         self.parse_left_associative_binary_operation(Self::terms, |kind| match kind {
             TokenKind::Equal => Some(BinaryOperator::Equal),
             TokenKind::BangEqual => Some(BinaryOperator::NotEqual),
@@ -92,7 +146,7 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
         })
     }
 
-    fn terms(&mut self) -> Expr {
+    fn terms(&mut self) -> Option<Expr> {
         self.parse_left_associative_binary_operation(Self::factors, |kind| match kind {
             TokenKind::Plus => Some(BinaryOperator::Add),
             TokenKind::Minus => Some(BinaryOperator::Subtract),
@@ -100,7 +154,7 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
         })
     }
 
-    fn factors(&mut self) -> Expr {
+    fn factors(&mut self) -> Option<Expr> {
         self.parse_left_associative_binary_operation(Self::unary_operation, |token| match token {
             TokenKind::Asterix => Some(BinaryOperator::Multiply),
             TokenKind::Slash => Some(BinaryOperator::Divide),
@@ -108,40 +162,44 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
         })
     }
 
-    fn unary_operation(&mut self) -> Expr {
+    fn unary_operation(&mut self) -> Option<Expr> {
         match self.input.peek() {
             Some(&Token {
                 span,
                 kind: TokenKind::Bang,
             }) => {
                 self.input.next();
-                Expr::UnaryOperation(Box::new(UnaryOperation {
-                    op_span: span,
-                    operator: UnaryOperator::Not,
-                    operand: self.unary_operation(),
-                }))
+                self.unary_operation().map(|operand| {
+                    Expr::UnaryOperation(Box::new(UnaryOperation {
+                        op_span: span,
+                        operator: UnaryOperator::Not,
+                        operand,
+                    }))
+                })
             }
             Some(&Token {
                 span,
                 kind: TokenKind::Minus,
             }) => {
                 self.input.next();
-                Expr::UnaryOperation(Box::new(UnaryOperation {
-                    op_span: span,
-                    operator: UnaryOperator::Negate,
-                    operand: self.unary_operation(),
-                }))
+                self.unary_operation().map(|operand| {
+                    Expr::UnaryOperation(Box::new(UnaryOperation {
+                        op_span: span,
+                        operator: UnaryOperator::Negate,
+                        operand,
+                    }))
+                })
             }
             _ => self.innermost(),
         }
     }
 
-    fn innermost(&mut self) -> Expr {
+    fn innermost(&mut self) -> Option<Expr> {
         match self.input.next() {
             Some(Token {
                 span: if_span,
                 kind: TokenKind::If,
-            }) => self.finish_if(if_span),
+            }) => self.finish_if_expr(if_span),
             Some(Token {
                 span: left_paren,
                 kind: TokenKind::LeftParen,
@@ -149,52 +207,54 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
             Some(Token {
                 span,
                 kind: TokenKind::Int(val),
-            }) => Expr::Int(span, val),
+            }) => Some(Expr::Int(span, val)),
             Some(Token {
                 span,
                 kind: TokenKind::Ident(name),
-            }) => Expr::Ident(Ident { span, name }),
-            token => self.unexpected_token(token.as_ref()),
+            }) => Some(Expr::Ident(Ident { span, name })),
+            token => {
+                self.unexpected_token(token.as_ref());
+                None
+            }
         }
     }
 
-    fn finish_if(&mut self, if_span: Span) -> Expr {
-        let cond = self.expr();
-        assert_kind!(self, TokenKind::LeftCurly);
-        let then = self.expr();
-        assert_kind!(self, TokenKind::RightCurly);
-        assert_kind!(self, TokenKind::Else);
-        assert_kind!(self, TokenKind::LeftCurly);
-        let else_ = self.expr();
-        assert_kind!(self, TokenKind::RightCurly);
+    fn finish_if_expr(&mut self, if_span: Span) -> Option<Expr> {
+        let cond = self.expr()?;
+        let then_span = assert_next!(self, TokenKind::Then)?;
+        let then = self.expr()?;
+        let else_span = assert_next!(self, TokenKind::Else)?;
+        let else_ = self.expr()?;
 
-        Expr::If(Box::new(If {
+        Some(Expr::If(Box::new(IfExpr {
             if_span,
             cond,
+            then_span,
             then,
+            else_span,
             else_,
-        }))
+        })))
     }
 
-    fn finish_grouping(&mut self, left_paren: Span) -> Expr {
-        let expr = Box::new(self.expr());
-        let right_paren = assert_kind!(self, TokenKind::RightParen);
-        Expr::Grouping(Grouping {
+    fn finish_grouping(&mut self, left_paren: Span) -> Option<Expr> {
+        let expr = Box::new(self.expr()?);
+        let right_paren = assert_next!(self, TokenKind::RightParen)?;
+        Some(Expr::Grouping(Grouping {
             left_paren,
             expr,
             right_paren,
-        })
+        }))
     }
 
     fn parse_left_associative_binary_operation<
-        F: Fn(&mut Self) -> Expr,
+        F: Fn(&mut Self) -> Option<Expr>,
         M: Fn(&TokenKind) -> Option<BinaryOperator>,
     >(
         &mut self,
         inner: F,
         matcher: M,
-    ) -> Expr {
-        let mut lhs = inner(self);
+    ) -> Option<Expr> {
+        let mut lhs = inner(self)?;
         while let Some(Token { span, kind }) = self.input.peek() {
             let op_span = *span;
             let operator = match matcher(kind) {
@@ -202,17 +262,18 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 None => break,
             };
             self.input.next();
+            let rhs = inner(self)?;
             lhs = Expr::BinaryOperation(Box::new(BinaryOperation {
                 lhs,
-                rhs: inner(self),
+                rhs,
                 op_span,
                 operator,
             }));
         }
-        lhs
+        Some(lhs)
     }
 
-    fn unexpected_token(&mut self, token: Option<&Token>) -> Expr {
+    fn unexpected_token(&mut self, token: Option<&Token>) {
         if let Some(t) = token {
             self.diagnostics
                 .push(Diagnostic::error(t.span, "Unexpected token"));
@@ -222,6 +283,5 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 "Expected token, found EOF",
             ));
         }
-        Expr::Error
     }
 }

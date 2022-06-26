@@ -30,12 +30,11 @@ pub enum TokenKind {
     LeftArrow,
 
     If,
+    Then,
     Else,
     Let,
 
     Ident(String),
 
     Int(i64),
-
-    Invalid,
 }
