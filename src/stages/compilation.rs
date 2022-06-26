@@ -6,9 +6,18 @@ use crate::{
 };
 
 pub fn compile(stmts: &[Stmt]) -> Function {
+    compile_with_scope(stmts, &HashMap::new())
+}
+
+pub fn compile_with_scope(stmts: &[Stmt], scope: &HashMap<String, i64>) -> Function {
     assert!(!stmts.is_empty());
 
     let mut compiler = Compiler::new();
+    for (name, &val) in scope {
+        let dest = compiler.var();
+        compiler.emit(Instr::Const { dest, val });
+        compiler.scope.insert(name.to_string(), dest);
+    }
     for stmt in &stmts[..stmts.len() - 1] {
         compiler.stmt(stmt);
     }

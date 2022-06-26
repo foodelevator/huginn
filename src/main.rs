@@ -1,5 +1,6 @@
 #![feature(box_patterns, assert_matches)]
 
+use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::io::BufRead;
@@ -49,6 +50,7 @@ fn main() {
 
 fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
     let mut line = String::new();
+    let mut scope = HashMap::new();
     loop {
         line.clear();
         print!("\x1b[34m>\x1b[0m ");
@@ -99,7 +101,7 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        let func = compilation::compile(&[stmt]);
+        let func = compilation::compile_with_scope(&[stmt.clone()], &scope);
 
         if mode == Mode::Bytecode {
             for (i, block) in func.blocks.iter().enumerate() {
@@ -118,6 +120,18 @@ fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
 
         if mode == Mode::Run {
             let res = codegen::run_jit(&func);
+            if let syntax_tree::Stmt::Assign(assign) = stmt {
+                match assign.assignee {
+                    syntax_tree::Assignee::Let(common::Ident { name, .. })
+                    | syntax_tree::Assignee::Expr(syntax_tree::Expr::Ident(common::Ident {
+                        name,
+                        ..
+                    })) => {
+                        scope.insert(name, res);
+                    }
+                    _ => {}
+                }
+            }
             println!("{}", res);
             continue;
         }
