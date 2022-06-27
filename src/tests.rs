@@ -1,10 +1,10 @@
-use std::assert_matches::assert_matches;
+use std::{assert_matches::assert_matches, collections::HashMap};
 
 use crate::{
     bytecode::Instr,
     codegen,
     common::BinaryOperator,
-    compilation::compile,
+    compilation::compile_stmt,
     lexing::Lexer,
     parsing::Parser,
     syntax_tree::{BinaryOperation, Expr, Grouping},
@@ -53,7 +53,7 @@ fn lex() {
 fn parse_basic_arithmetic() {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
@@ -84,7 +84,7 @@ fn parse_basic_arithmetic() {
 
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable(), &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
@@ -105,7 +105,7 @@ fn parse_basic_arithmetic() {
 
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable(), &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
@@ -129,7 +129,7 @@ fn parse_basic_arithmetic() {
 
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable(), &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr();
+    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
@@ -157,8 +157,8 @@ fn compile_basic_arithmetic() {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let stmt = parser.stmt();
-    let func = compile(&[stmt]);
+    let stmt = parser.stmt().unwrap();
+    let func = compile_stmt(&stmt, &HashMap::new());
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     assert_eq!(func.blocks.len(), 1);
@@ -215,10 +215,10 @@ fn test_code(code: &'static str, expected: i64) {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let stmt = parser.stmt();
+    let stmt = parser.stmt().unwrap();
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    let func = compile(&[stmt]);
+    let func = compile_stmt(&stmt, &HashMap::new());
     let res = codegen::run_jit(&func);
     assert_eq!(expected, res);
 }
@@ -237,5 +237,5 @@ fn codegen_booleans() {
 
 #[test]
 fn codegen_if() {
-    test_code("if 69 { 1337 } else { 42 } + 42", 1337 + 42);
+    test_code("42 + if 69 then 1337 else 42", 42 + 1337);
 }

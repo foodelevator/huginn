@@ -86,24 +86,25 @@ impl Compiler {
             Stmt::Assign(Assign {
                 assignee, value, ..
             }) => {
-                let dest = self.assignee(assignee);
+                let (dest, ident) = match assignee {
+                    Assignee::Expr(expr) => (self.lval(expr), None),
+                    Assignee::Let(ident) => {
+                        let var = self.var();
+                        (var, Some(ident))
+                    }
+                };
                 self.rval(value, dest);
+                // This must be done after `self.rval` since we allow variable shadowing and
+                // `value` might use an old variable with the same name as the one we're defining
+                // here.
+                if let Some(ident) = ident {
+                    self.scope.insert(ident.name.clone(), dest);
+                }
                 Some(dest)
             }
             Stmt::If(if_stmt) => {
                 self.if_stmt(if_stmt);
                 None
-            }
-        }
-    }
-
-    fn assignee(&mut self, assignee: &Assignee) -> Value {
-        match assignee {
-            Assignee::Expr(expr) => self.lval(expr),
-            Assignee::Let(ident) => {
-                let var = self.var();
-                self.scope.insert(ident.name.clone(), var);
-                var
             }
         }
     }

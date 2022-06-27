@@ -95,6 +95,7 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                     span: assign_sign,
                 }) = self.input.peek()
                 {
+                    self.input.next();
                     let value = self.expr()?;
                     Some(Stmt::Assign(Assign {
                         assignee: Assignee::Expr(expr),
