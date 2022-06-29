@@ -3,11 +3,11 @@ use std::{assert_matches::assert_matches, collections::HashMap};
 use crate::{
     bytecode::Instr,
     codegen,
-    common::BinaryOperator,
-    compilation::compile_stmt,
+    common::{BinaryOperator, Ident},
+    compilation::compile_expr,
     lexing::Lexer,
     parsing::Parser,
-    syntax_tree::{BinaryOperation, Expr, Grouping},
+    syntax_tree::{Assign, Assignee, BinaryOperation, Expr, ExprStmt, Grouping, Stmt},
     tokens::TokenKind,
 };
 
@@ -157,8 +157,8 @@ fn compile_basic_arithmetic() {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let stmt = parser.stmt().unwrap();
-    let func = compile_stmt(&stmt, &HashMap::new());
+    let expr = parser.expr().unwrap();
+    let func = compile_expr(&expr, &HashMap::new());
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     assert_eq!(func.blocks.len(), 1);
@@ -207,35 +207,71 @@ fn compile_basic_arithmetic() {
              prod_1_a == prod_1_b &&
              prod_2_a == prod_2_b &&
              prod_3_a == prod_3_b &&
-             prod_4_a == prod_4_b
+             prod_4_a == prod_4_b,
+        "{:#?}",
+        &func.blocks[0].instrs[..],
     );
 }
 
-fn test_code(code: &'static str, expected: i64) {
+fn run_expr(code: &'static str) -> i64 {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let stmt = parser.stmt().unwrap();
+    let expr = parser.expr().unwrap();
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    let func = compile_stmt(&stmt, &HashMap::new());
-    let res = codegen::run_jit(&func);
-    assert_eq!(expected, res);
+    let func = compile_expr(&expr, &HashMap::new());
+    codegen::run_jit(&func)
 }
 
 #[test]
 fn codegen_basic_arithmetic() {
-    test_code("1 + 2 * 3 - 4 / 5", 1 + 2 * 3 - 4 / 5);
+    assert_eq!(1 + 2 * 3 - 4 / 5, run_expr("1 + 2 * 3 - 4 / 5"));
 }
 
 #[test]
 fn codegen_booleans() {
     for (code, expected) in [("1 <= 2", 1), ("!-2", 0), ("3 = 1 + 2", 1)] {
-        test_code(code, expected);
+        assert_eq!(expected, run_expr(code));
     }
 }
 
 #[test]
 fn codegen_if() {
-    test_code("42 + if 69 then 1337 else 42", 42 + 1337);
+    assert_eq!(42 + 1337, run_expr("42 + if 69 then 1337 else 42"));
+}
+
+#[test]
+fn parse_block() {
+    let code = "{
+        let a <- 2;
+        a + a
+    }";
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
+    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let block = parser.block();
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
+    let block = block.unwrap();
+    assert_matches!(
+        &block.stmts[0],
+        Stmt::Assign(Assign {
+            assignee: Assignee::Let(Ident { name, .. }),
+            value: Expr::Int(_, 2),
+            ..
+        }) if name == "a",
+    );
+    assert_matches!(
+        &block.stmts[1],
+        Stmt::Expr(ExprStmt {
+            expr: Expr::BinaryOperation(box BinaryOperation {
+                lhs: Expr::Ident(Ident { name: name1, .. }),
+                rhs: Expr::Ident(Ident { name: name2, .. }),
+                operator: BinaryOperator::Add,
+                ..
+            }),
+            semicolon: None,
+        }) if name1 == "a" && name2 == "a",
+    );
 }

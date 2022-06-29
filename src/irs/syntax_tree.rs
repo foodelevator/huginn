@@ -9,9 +9,15 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Expr(Expr),
+    Expr(ExprStmt),
     Assign(Assign),
     If(IfStmt),
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprStmt {
+    pub expr: Expr,
+    pub semicolon: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +25,7 @@ pub struct Assign {
     pub assignee: Assignee,
     pub assign_sign: Span,
     pub value: Expr,
+    pub semicolon: Span,
 }
 
 #[derive(Debug, Clone)]

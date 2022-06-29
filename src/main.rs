@@ -1,15 +1,14 @@
 use std::error::Error;
-use std::io::BufRead;
 use std::io::{stdin, stdout, Write};
+use std::io::{BufRead, Read};
 use std::ops::ControlFlow;
-use std::path::Path;
 use std::{collections::HashMap, env, fs, process};
 
 use compiler::common::Ident;
-use compiler::compilation::{compile_block, compile_stmt};
+use compiler::compilation::{compile_block, compile_expr, compile_stmt};
 use compiler::lexing::Lexer;
 use compiler::parsing::Parser;
-use compiler::syntax_tree::{Assignee, Expr, Stmt};
+use compiler::syntax_tree::{Assignee, Expr, ExprStmt, Stmt};
 use compiler::{codegen, Diagnostic};
 
 fn main() {
@@ -22,17 +21,32 @@ fn main() {
             "bytecode" => mode = Mode::Bytecode,
             "build" => mode = Mode::Build,
             "run" => mode = Mode::Run,
-            name => path = Some(name.to_string()),
+            name if path.is_none() => path = Some(name.to_string()),
+            arg => {
+                eprintln!(
+                    "Unknown command {}, only one source file can be specified",
+                    arg
+                );
+                process::exit(1);
+            }
         }
     }
 
     if let Some(path) = path {
-        if let Err(err) = run_file(path, mode) {
+        let file = match fs::File::open(path) {
+            Ok(file) => file,
+            Err(err) => {
+                eprintln!("{}", err);
+                process::exit(1);
+            }
+        };
+        if let Err(err) = run(file, mode) {
             eprintln!("{}", err);
             process::exit(1);
         }
     } else {
-        if let Err(err) = repl(mode) {
+        let input = stdin();
+        if let Err(err) = run(input, mode) {
             eprintln!("{}", err);
             process::exit(1);
         }
@@ -103,7 +117,12 @@ pub fn run_stmt(
         return Ok(ControlFlow::Continue(()));
     }
 
-    let func = compile_stmt(&stmt, &scope);
+    let (func, print_result) = match &stmt {
+        Stmt::Expr(ExprStmt { expr, .. }) => {
+            (compile_expr(expr, scope), /*semicolon.is_none()*/ true)
+        }
+        stmt => (compile_stmt(stmt, scope), false),
+    };
 
     if mode == Mode::Bytecode {
         for (i, block) in func.blocks.iter().enumerate() {
@@ -131,18 +150,19 @@ pub fn run_stmt(
                 _ => {}
             }
         }
-        println!("{}", res);
+        if print_result {
+            println!("{}", res);
+        }
         return Ok(ControlFlow::Continue(()));
     }
 
     unimplemented!("Unimplemented mode {:?}", mode)
 }
 
-pub fn run_file(path: impl AsRef<Path>, mode: Mode) -> Result<(), Box<dyn Error>> {
-    let src = match fs::read_to_string(path) {
-        Ok(src) => format!("{{{}}}", src),
-        Err(err) => return Err(Box::new(err)),
-    };
+pub fn run(mut input: impl Read, mode: Mode) -> Result<(), Box<dyn Error>> {
+    let mut src = String::new();
+    input.read_to_string(&mut src)?;
+    let src = src;
 
     let mut lexer_diagnostics = Vec::new();
     let mut lexer = Lexer::new(src.chars().peekable(), &mut lexer_diagnostics).peekable();
@@ -193,8 +213,7 @@ pub fn run_file(path: impl AsRef<Path>, mode: Mode) -> Result<(), Box<dyn Error>
     }
 
     if mode == Mode::Run {
-        let res = codegen::run_jit(&func);
-        println!("{}", res);
+        codegen::run_jit(&func);
         return Ok(());
     }
 

@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
     syntax_tree::{
-        Assign, Assignee, BinaryOperation, Block, Expr, Grouping, IfExpr, IfStmt, Stmt,
+        Assign, Assignee, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
         UnaryOperation,
     },
     tokens::{Token, TokenKind},
@@ -47,7 +47,6 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 }) => break,
                 _ => {
                     stmts.push(self.stmt()?);
-                    assert_next!(self, TokenKind::Semicolon)?;
                 }
             }
         }
@@ -75,10 +74,12 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 };
                 let assign_sign = assert_next!(self, TokenKind::LeftArrow)?;
                 let value = self.expr()?;
+                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
                 Some(Stmt::Assign(Assign {
                     assignee: Assignee::Let(ident),
                     assign_sign,
                     value,
+                    semicolon,
                 }))
             }
             Some(&Token {
@@ -97,13 +98,26 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 {
                     self.input.next();
                     let value = self.expr()?;
+                    let semicolon = assert_next!(self, TokenKind::Semicolon)?;
                     Some(Stmt::Assign(Assign {
                         assignee: Assignee::Expr(expr),
                         assign_sign,
                         value,
+                        semicolon,
                     }))
                 } else {
-                    Some(Stmt::Expr(expr))
+                    let semicolon = assert_next!(self, TokenKind::Semicolon)?;
+                    // let semicolon = match self.input.peek() {
+                    //     Some(&Token {
+                    //         kind: TokenKind::Semicolon,
+                    //         span,
+                    //     }) => {
+                    //         self.input.next();
+                    //         Some(span)
+                    //     }
+                    //     _ => None,
+                    // };
+                    Some(Stmt::Expr(ExprStmt { expr, semicolon }))
                 }
             }
         }

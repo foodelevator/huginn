@@ -3,25 +3,20 @@ use std::collections::HashMap;
 use crate::{
     bytecode::{Block as BCBlock, BlockId, Function, Instr, Value},
     syntax_tree::{
-        Assign, Assignee, BinaryOperation, Block, Expr, Grouping, IfExpr, IfStmt, Stmt,
+        Assign, Assignee, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
         UnaryOperation,
     },
 };
 
 pub fn compile_block(block: &Block) -> Function {
-    assert!(!block.stmts.is_empty());
-
     let mut compiler = Compiler::new();
-    let ret = match compiler.block(block) {
-        Some(ret) => ret,
-        None => {
-            let dest = compiler.var();
-            compiler.emit(Instr::Const { dest, val: 0 });
-            dest
-        }
-    };
+    compiler.block(block);
 
+    // Since we at the moment always must return a value:
+    let ret = compiler.var();
+    compiler.emit(Instr::Const { dest: ret, val: 0 });
     compiler.emit(Instr::Return(ret));
+
     Function {
         blocks: compiler.blocks,
     }
@@ -34,16 +29,30 @@ pub fn compile_stmt(stmt: &Stmt, scope: &HashMap<String, i64>) -> Function {
         compiler.emit(Instr::Const { dest, val });
         compiler.scope.insert(name.to_string(), dest);
     }
-    let ret = match compiler.stmt(stmt) {
-        Some(ret) => ret,
-        None => {
-            let dest = compiler.var();
-            compiler.emit(Instr::Const { dest, val: 0 });
-            dest
-        }
-    };
+    compiler.stmt(stmt);
 
+    // Since we at the moment always must return a value:
+    let ret = compiler.var();
+    compiler.emit(Instr::Const { dest: ret, val: 0 });
     compiler.emit(Instr::Return(ret));
+
+    Function {
+        blocks: compiler.blocks,
+    }
+}
+
+pub fn compile_expr(expr: &Expr, scope: &HashMap<String, i64>) -> Function {
+    let mut compiler = Compiler::new();
+    for (name, &val) in scope {
+        let dest = compiler.var();
+        compiler.emit(Instr::Const { dest, val });
+        compiler.scope.insert(name.to_string(), dest);
+    }
+
+    let ret = compiler.var();
+    compiler.rval(expr, ret);
+    compiler.emit(Instr::Return(ret));
+
     Function {
         blocks: compiler.blocks,
     }
@@ -69,19 +78,17 @@ impl Compiler {
         this
     }
 
-    fn block(&mut self, block: &Block) -> Option<Value> {
-        for stmt in &block.stmts[..block.stmts.len() - 1] {
+    fn block(&mut self, block: &Block) {
+        for stmt in &block.stmts {
             self.stmt(stmt);
         }
-        self.stmt(&block.stmts[block.stmts.len() - 1])
     }
 
-    fn stmt(&mut self, stmt: &Stmt) -> Option<Value> {
+    fn stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Expr(expr) => {
+            Stmt::Expr(ExprStmt { expr, .. }) => {
                 let dest = self.var();
                 self.rval(expr, dest);
-                Some(dest)
             }
             Stmt::Assign(Assign {
                 assignee, value, ..
@@ -100,11 +107,9 @@ impl Compiler {
                 if let Some(ident) = ident {
                     self.scope.insert(ident.name.clone(), dest);
                 }
-                Some(dest)
             }
             Stmt::If(if_stmt) => {
                 self.if_stmt(if_stmt);
-                None
             }
         }
     }
