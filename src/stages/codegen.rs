@@ -4,8 +4,8 @@ mod cl {
     pub use cranelift::{
         codegen::{
             ir::{
-                condcodes::IntCC, types::I64, AbiParam, Block, ExternalName, Function, Signature,
-                Value,
+                condcodes::IntCC, types::I64, AbiParam, Block, ExternalName, FuncRef, Function,
+                Signature, TrapCode, Value,
             },
             isa, settings, Context,
         },
@@ -23,24 +23,58 @@ use crate::{
     common::{BinaryOperator, UnaryOperator},
 };
 
-pub fn run_jit(bytecode_func: &Function) -> i64 {
-    let codegen_context = CodegenContext::new(bytecode_func);
-    let func = codegen_context.gen_func();
+fn print_sig() -> cl::Signature {
+    cl::Signature {
+        params: vec![cl::AbiParam::new(cl::I64)],
+        returns: vec![],
+        call_conv: cl::isa::CallConv::SystemV,
+    }
+}
 
+fn exit_sig() -> cl::Signature {
+    cl::Signature {
+        params: vec![cl::AbiParam::new(cl::I64)],
+        returns: vec![],
+        call_conv: cl::isa::CallConv::Fast,
+    }
+}
+
+fn main_sig() -> cl::Signature {
+    cl::Signature {
+        params: vec![],
+        returns: vec![cl::AbiParam::new(cl::I64)],
+        call_conv: cl::isa::CallConv::Fast,
+    }
+}
+
+pub fn run_jit(bytecode_func: &Function) -> i64 {
     let mut jit_mod =
         cl::JITModule::new(cl::JITBuilder::new(cranelift_module::default_libcall_names()).unwrap());
 
-    let func_id = jit_mod
-        .declare_function("_start", cl::Linkage::Export, &func.signature)
+    let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), main_sig());
+
+    let main_id = jit_mod
+        .declare_function("_start", cl::Linkage::Export, &main_func.signature)
+        .unwrap();
+    let print_id = jit_mod
+        .declare_function("print", cl::Linkage::Import, &print_sig())
+        .unwrap();
+    let exit_id = jit_mod
+        .declare_function("exit", cl::Linkage::Import, &exit_sig())
         .unwrap();
 
-    let mut ctx = cl::Context::for_function(func);
+    let print_ref = jit_mod.declare_func_in_func(print_id, &mut main_func);
+    let exit_ref = jit_mod.declare_func_in_func(exit_id, &mut main_func);
 
-    jit_mod.define_function(func_id, &mut ctx).unwrap();
+    let codegen_context = CodegenContext::new(bytecode_func, print_ref, exit_ref);
+    codegen_context.gen_func(&mut main_func);
+
+    let mut ctx = cl::Context::for_function(main_func);
+    jit_mod.define_function(main_id, &mut ctx).unwrap();
 
     jit_mod.finalize_definitions();
 
-    let func_ptr = jit_mod.get_finalized_function(func_id);
+    let func_ptr = jit_mod.get_finalized_function(main_id);
 
     // SAFETY: who cares about stuff like that?
     let callable: fn() -> i64 = unsafe { mem::transmute(func_ptr) };
@@ -59,25 +93,35 @@ pub fn output_to_file<P: AsRef<Path>>(bytecode_func: &Function, filename: P) {
         .finish(cl::settings::Flags::new(cl::settings::builder()))
         .unwrap();
 
-    let codegen_context = CodegenContext::new(bytecode_func);
-    let func = codegen_context.gen_func();
-
     let mut obj_mod = cl::ObjectModule::new(
         cl::ObjectBuilder::new(
             target_isa,
-            "bingbong",
+            "bingbong", // lol
             cranelift_module::default_libcall_names(),
         )
         .unwrap(),
     );
 
-    let func_id = obj_mod
-        .declare_function("_start", cl::Linkage::Export, &func.signature)
+    let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), main_sig());
+
+    let main_id = obj_mod
+        .declare_function("_start", cl::Linkage::Export, &main_func.signature)
+        .unwrap();
+    let print_id = obj_mod
+        .declare_function("print", cl::Linkage::Import, &print_sig())
+        .unwrap();
+    let exit_id = obj_mod
+        .declare_function("exit", cl::Linkage::Import, &exit_sig())
         .unwrap();
 
-    let mut ctx = cl::Context::for_function(func);
+    let print_ref = obj_mod.declare_func_in_func(print_id, &mut main_func);
+    let exit_ref = obj_mod.declare_func_in_func(exit_id, &mut main_func);
 
-    obj_mod.define_function(func_id, &mut ctx).unwrap();
+    let codegen_context = CodegenContext::new(bytecode_func, print_ref, exit_ref);
+    codegen_context.gen_func(&mut main_func);
+
+    let mut ctx = cl::Context::for_function(main_func);
+    obj_mod.define_function(main_id, &mut ctx).unwrap();
 
     let product = obj_mod.finish();
 
@@ -89,48 +133,43 @@ pub fn output_to_file<P: AsRef<Path>>(bytecode_func: &Function, filename: P) {
 struct CodegenContext<'f> {
     blocks: Vec<cl::Block>,
     func: &'f Function,
+    print_func: cl::FuncRef,
+    exit_func: cl::FuncRef,
 }
 
 impl<'f> CodegenContext<'f> {
-    pub fn new(func: &'f Function) -> Self {
+    pub fn new(func: &'f Function, print_func: cl::FuncRef, exit_func: cl::FuncRef) -> Self {
         Self {
             blocks: Vec::new(),
             func,
+            print_func,
+            exit_func,
         }
     }
 
-    pub fn gen_func(mut self) -> cl::Function {
-        let sig = cl::Signature {
-            params: vec![],
-            returns: vec![cl::AbiParam::new(cl::I64)],
-            call_conv: cl::isa::CallConv::Fast, // wroom wroom
-        };
-        let mut func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), sig);
+    pub fn gen_func(mut self, func: &mut cl::Function) {
         let mut fb_ctx = cl::FunctionBuilderContext::new();
+        let mut b = cl::FunctionBuilder::new(func, &mut fb_ctx);
 
-        let mut builder = cl::FunctionBuilder::new(&mut func, &mut fb_ctx);
-
-        self.declare_all_vars(&mut builder);
+        self.declare_all_vars(&mut b);
 
         for _ in &self.func.blocks {
-            self.blocks.push(builder.create_block());
+            self.blocks.push(b.create_block());
         }
 
         for (i, block) in self.func.blocks.iter().enumerate() {
-            builder.switch_to_block(self.blocks[i]);
-            self.gen_block(&mut builder, block);
+            b.switch_to_block(self.blocks[i]);
+            self.gen_block(&mut b, block);
         }
 
-        builder.seal_all_blocks();
+        b.seal_all_blocks();
 
-        builder.finalize();
+        b.finalize();
 
         let flags = cl::settings::Flags::new(cl::settings::builder());
         if let Err(err) = cranelift::codegen::verify_function(&func, &flags) {
             panic!("codegen verify: {}", err);
         }
-
-        func
     }
 
     fn declare_all_vars(&mut self, b: &mut cl::FunctionBuilder) {
@@ -144,6 +183,7 @@ impl<'f> CodegenContext<'f> {
                     Instr::Mov { dest, .. } => dest,
                     Instr::Jump(_) => continue,
                     Instr::JumpIf { .. } => continue,
+                    Instr::Print(dest) => dest,
                     Instr::Return(val) => val,
                 };
                 vars.insert(var);
@@ -199,8 +239,13 @@ impl<'f> CodegenContext<'f> {
                 let dest = self.blocks[block_id as usize];
                 b.ins().brnz(cond, dest, &[]);
             }
+            Instr::Print(val) => {
+                let val = b.use_var(cl::Variable::with_u32(val));
+                b.ins().call(self.print_func, &[val]);
+            }
             Instr::Return(val) => {
                 let val = b.use_var(cl::Variable::with_u32(val));
+                b.ins().call(self.exit_func, &[val]); // NOTE: yeet
                 b.ins().return_(&[val]);
             }
         }

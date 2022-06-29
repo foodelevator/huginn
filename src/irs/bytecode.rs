@@ -36,6 +36,7 @@ pub enum Instr {
         cond: Value,
         block_id: BlockId,
     },
+    Print(Value),
     Return(Value),
 }
 

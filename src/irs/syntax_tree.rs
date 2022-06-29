@@ -12,6 +12,7 @@ pub enum Stmt {
     Expr(ExprStmt),
     Assign(Assign),
     If(IfStmt),
+    Print(Span, Grouping, Span),
 }
 
 #[derive(Debug, Clone)]

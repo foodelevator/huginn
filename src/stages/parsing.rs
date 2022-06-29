@@ -89,6 +89,19 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 self.input.next();
                 self.finish_if_stmt(span)
             }
+            Some(&Token {
+                kind: TokenKind::Print,
+                span,
+            }) => {
+                self.input.next();
+                let left_paren = assert_next!(self, TokenKind::LeftParen)?;
+                let g = self.finish_grouping(left_paren)?;
+                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
+                match g {
+                    Expr::Grouping(g) => Some(Stmt::Print(span, g, semicolon)),
+                    _ => unreachable!(),
+                }
+            }
             _ => {
                 let expr = self.expr()?;
                 if let Some(&Token {

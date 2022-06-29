@@ -111,6 +111,11 @@ impl Compiler {
             Stmt::If(if_stmt) => {
                 self.if_stmt(if_stmt);
             }
+            Stmt::Print(_, grouping, _) => {
+                let var = self.var();
+                self.rval(&grouping.expr, var);
+                self.emit(Instr::Print(var))
+            }
         }
     }
 

@@ -35,6 +35,7 @@ pub enum TokenKind {
     Let,
 
     Ident(String),
+    Print,
 
     Int(i64),
 }
