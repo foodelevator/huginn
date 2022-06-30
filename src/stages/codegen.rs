@@ -31,14 +31,6 @@ fn print_sig() -> cl::Signature {
     }
 }
 
-fn exit_sig() -> cl::Signature {
-    cl::Signature {
-        params: vec![cl::AbiParam::new(cl::I64)],
-        returns: vec![],
-        call_conv: cl::isa::CallConv::Fast,
-    }
-}
-
 fn main_sig() -> cl::Signature {
     cl::Signature {
         params: vec![],
@@ -54,19 +46,15 @@ pub fn run_jit(bytecode_func: &Function) -> i64 {
     let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), main_sig());
 
     let main_id = jit_mod
-        .declare_function("_start", cl::Linkage::Export, &main_func.signature)
+        .declare_function("main", cl::Linkage::Export, &main_func.signature)
         .unwrap();
     let print_id = jit_mod
         .declare_function("print", cl::Linkage::Import, &print_sig())
         .unwrap();
-    let exit_id = jit_mod
-        .declare_function("exit", cl::Linkage::Import, &exit_sig())
-        .unwrap();
 
     let print_ref = jit_mod.declare_func_in_func(print_id, &mut main_func);
-    let exit_ref = jit_mod.declare_func_in_func(exit_id, &mut main_func);
 
-    let codegen_context = CodegenContext::new(bytecode_func, print_ref, exit_ref);
+    let codegen_context = CodegenContext::new(bytecode_func, print_ref);
     codegen_context.gen_func(&mut main_func);
 
     let mut ctx = cl::Context::for_function(main_func);
@@ -105,19 +93,15 @@ pub fn output_to_file<P: AsRef<Path>>(bytecode_func: &Function, filename: P) {
     let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), main_sig());
 
     let main_id = obj_mod
-        .declare_function("_start", cl::Linkage::Export, &main_func.signature)
+        .declare_function("main", cl::Linkage::Export, &main_func.signature)
         .unwrap();
     let print_id = obj_mod
         .declare_function("print", cl::Linkage::Import, &print_sig())
         .unwrap();
-    let exit_id = obj_mod
-        .declare_function("exit", cl::Linkage::Import, &exit_sig())
-        .unwrap();
 
     let print_ref = obj_mod.declare_func_in_func(print_id, &mut main_func);
-    let exit_ref = obj_mod.declare_func_in_func(exit_id, &mut main_func);
 
-    let codegen_context = CodegenContext::new(bytecode_func, print_ref, exit_ref);
+    let codegen_context = CodegenContext::new(bytecode_func, print_ref);
     codegen_context.gen_func(&mut main_func);
 
     let mut ctx = cl::Context::for_function(main_func);
@@ -134,16 +118,14 @@ struct CodegenContext<'f> {
     blocks: Vec<cl::Block>,
     func: &'f Function,
     print_func: cl::FuncRef,
-    exit_func: cl::FuncRef,
 }
 
 impl<'f> CodegenContext<'f> {
-    pub fn new(func: &'f Function, print_func: cl::FuncRef, exit_func: cl::FuncRef) -> Self {
+    pub fn new(func: &'f Function, print_func: cl::FuncRef) -> Self {
         Self {
             blocks: Vec::new(),
             func,
             print_func,
-            exit_func,
         }
     }
 
@@ -245,7 +227,6 @@ impl<'f> CodegenContext<'f> {
             }
             Instr::Return(val) => {
                 let val = b.use_var(cl::Variable::with_u32(val));
-                b.ins().call(self.exit_func, &[val]); // NOTE: yeet
                 b.ins().return_(&[val]);
             }
         }

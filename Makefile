@@ -1,16 +1,16 @@
-testprog: output.o lowlib.o
+testprog: output.o asmlib.o
 	ld -o $@ $^
 
 output.o: testsrc
 	cargo r build $<
 
-lowlib.o: lowlib.s
+asmlib.o: asmlib.s
 	nasm -f elf64 -o $@ $<
 
 run: testprog
 	./testprog
 
 clean:
-	rm output.o lowlib.o testprog
+	rm output.o asmlib.o testprog
 
 .PHONY: run clean

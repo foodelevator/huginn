@@ -1,9 +1,18 @@
 bits 64
 
+extern main
+
 section .text
-global print
+
+global _start
+_start:
+    call main
+    mov rdi, 0
+    mov rax, 0x3c ; sys_exit
+    syscall
 
 ; FIXME: crashes when trying to print -9223372036854775808 (= i64 min)
+global print
 print: ; System V calling conv
     xor r9d, r9d
     mov r8d, 1
@@ -16,7 +25,6 @@ print: ; System V calling conv
 
     mov ecx, 10
     mov rdi, lf
-
 begin_loop:
     cqo
     div rcx              ; (rdx, rax) = (rax % ecx, rax / ecx)
@@ -26,13 +34,11 @@ begin_loop:
     test rax, rax
     jnz begin_loop
 
-    ; if negative
     test r8, r8
     jz write_syscall
 
     dec rdi
     mov byte [rdi], '-'
-
 write_syscall:
     inc rax       ; rax = sys_write
     mov rsi, rdi  ; buf
@@ -41,11 +47,6 @@ write_syscall:
     sub rdx, rsi ; count
     syscall
     ret
-
-global exit
-exit:
-    mov rax, 0x3c ; sys_exit
-    syscall
 
 section .data
 
