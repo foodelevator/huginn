@@ -104,10 +104,15 @@ impl Compiler {
             Stmt::If(if_stmt) => {
                 self.if_stmt(if_stmt);
             }
-            Stmt::Print(_, grouping, _) => {
+            Stmt::Print(_, expr, _) => {
                 let var = self.var();
-                self.rval(&grouping.expr, var);
+                self.rval(&expr, var);
                 self.emit(Instr::Print(var))
+            }
+            Stmt::Return(_, expr, _) => {
+                let var = self.var();
+                self.rval(&expr, var);
+                self.emit(Instr::Return(var));
             }
         }
     }

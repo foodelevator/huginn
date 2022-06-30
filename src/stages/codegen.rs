@@ -179,7 +179,10 @@ impl<'f> CodegenContext<'f> {
 
     fn gen_block(&mut self, b: &mut cl::FunctionBuilder, block: &Block) {
         for instr in &block.instrs {
-            self.gen_instr(b, instr)
+            self.gen_instr(b, instr);
+            if b.is_filled() {
+                break;
+            }
         }
     }
 

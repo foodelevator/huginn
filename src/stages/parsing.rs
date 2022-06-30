@@ -60,30 +60,6 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
 
     pub fn stmt(&mut self) -> Option<Stmt> {
         match self.input.peek() {
-            /*
-            Some(Token {
-                kind: TokenKind::Let,
-                ..
-            }) => {
-                self.input.next();
-                let ident = match self.input.next() {
-                    Some(Token {
-                        kind: TokenKind::Ident(name),
-                        span,
-                    }) => Ident { span, name },
-                    _ => todo!(),
-                };
-                let assign_sign = assert_next!(self, TokenKind::LeftArrow)?;
-                let value = self.expr()?;
-                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
-                Some(Stmt::Assign(Assign {
-                    assignee: Assignee::Let(ident),
-                    assign_sign,
-                    value,
-                    semicolon,
-                }))
-            }
-            */
             Some(&Token {
                 kind: TokenKind::If,
                 span,
@@ -93,16 +69,22 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
             }
             Some(&Token {
                 kind: TokenKind::Print,
-                span,
+                span: print_span,
             }) => {
                 self.input.next();
                 let left_paren = assert_next!(self, TokenKind::LeftParen)?;
-                let g = self.finish_grouping(left_paren)?;
+                let expr = self.finish_grouping(left_paren)?;
                 let semicolon = assert_next!(self, TokenKind::Semicolon)?;
-                return match g {
-                    Expr::Grouping(g) => Some(Stmt::Print(span, g, semicolon)),
-                    _ => unreachable!(),
-                };
+                return Some(Stmt::Print(print_span, expr, semicolon));
+            }
+            Some(&Token {
+                kind: TokenKind::Return,
+                span: return_span,
+            }) => {
+                self.input.next();
+                let expr = self.expr()?;
+                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
+                return Some(Stmt::Return(return_span, expr, semicolon));
             }
             _ => {}
         }
@@ -126,6 +108,8 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 kind: TokenKind::ColonEqual,
                 span: decl_sign,
             }) => {
+                self.input.next();
+
                 let ident = match expr {
                     Expr::Ident(ident) => ident,
                     expr => {
@@ -133,8 +117,6 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                         return None;
                     }
                 };
-
-                self.input.next();
                 let value = self.expr()?;
                 let semicolon = assert_next!(self, TokenKind::Semicolon)?;
                 Some(Stmt::VarDecl(VarDecl {
@@ -144,9 +126,17 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                     semicolon,
                 }))
             }
-            _ => {
-                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
+            Some(&Token {
+                kind: TokenKind::Semicolon,
+                span: semicolon,
+            }) => {
+                self.input.next();
                 Some(Stmt::Expr(ExprStmt { expr, semicolon }))
+            }
+            _ => {
+                let token = self.input.next();
+                self.unexpected_token(token.as_ref());
+                None
             }
         }
     }

@@ -13,7 +13,8 @@ pub enum Stmt {
     VarDecl(VarDecl),
     Assign(Assign),
     If(IfStmt),
-    Print(Span, Grouping, Span),
+    Print(Span, Expr, Span),
+    Return(Span, Expr, Span),
 }
 
 #[derive(Debug, Clone)]

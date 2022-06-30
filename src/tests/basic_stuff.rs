@@ -4,7 +4,7 @@ use crate::{
     bytecode::Instr,
     codegen,
     common::{BinaryOperator, Ident},
-    compilation::compile_expr,
+    compilation::{compile_block, compile_expr},
     lexing::Lexer,
     parsing::Parser,
     syntax_tree::{BinaryOperation, Expr, Grouping, Stmt, VarDecl},
@@ -241,23 +241,23 @@ fn codegen_if() {
     assert_eq!(42 + 1337, run_expr("42 + if 69 then 1337 else 42"));
 }
 
-// #[test]
-// fn variable_shadowing() {
-//     let code = "{
-//         a := 2;
-//         a := a + 2;
-//         return a;
-//     }";
-//     let (mut d1, mut d2) = (vec![], vec![]);
-//     let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
-//     let mut parser = Parser::new(&mut lexer, &mut d2);
-//     let block = parser.block();
-//     assert!(d1.is_empty(), "{:?}", d1);
-//     assert!(d2.is_empty(), "{:?}", d2);
-//     let block = block.unwrap();
-//     let func = compile_block(&block);
-//     assert_eq!(4, codegen::run_jit(&func))
-// }
+#[test]
+fn variable_shadowing() {
+    let code = "{
+        a := 2;
+        a := a + 2;
+        return a;
+    }";
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
+    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let block = parser.block();
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
+    let block = block.unwrap();
+    let func = compile_block(&block);
+    assert_eq!(4, codegen::run_jit(&func))
+}
 
 #[test]
 fn parse_block() {
@@ -284,7 +284,7 @@ fn parse_block() {
         &block.stmts[1],
         Stmt::Print(
             _,
-            Grouping {
+            Expr::Grouping(Grouping {
                 expr: box Expr::BinaryOperation(box BinaryOperation {
                     lhs: Expr::Ident(Ident { name: name1, .. }),
                     rhs: Expr::Ident(Ident { name: name2, .. }),
@@ -292,7 +292,7 @@ fn parse_block() {
                     ..
                 }),
                 ..
-            },
+            }),
             _,
         ) if name1 == "a" && name2 == "a",
     );

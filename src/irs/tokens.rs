@@ -32,9 +32,9 @@ pub enum TokenKind {
     If,
     Then,
     Else,
+    Print,
+    Return,
 
     Ident(String),
-    Print,
-
     Int(i64),
 }

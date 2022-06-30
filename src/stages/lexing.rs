@@ -92,6 +92,7 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
             "then" => TokenKind::Then,
             "else" => TokenKind::Else,
             "print" => TokenKind::Print,
+            "return" => TokenKind::Return,
 
             _ => TokenKind::Ident(word),
         }

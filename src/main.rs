@@ -215,7 +215,10 @@ pub fn run(mut input: impl Read, mode: Mode) -> Result<(), Box<dyn Error>> {
     }
 
     if mode == Mode::Run {
-        codegen::run_jit(&func);
+        let res = codegen::run_jit(&func);
+        if res != 0 {
+            println!("{}", res);
+        }
         return Ok(());
     }
 
