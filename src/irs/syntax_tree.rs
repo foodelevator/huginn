@@ -10,6 +10,7 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     Expr(ExprStmt),
+    VarDecl(VarDecl),
     Assign(Assign),
     If(IfStmt),
     Print(Span, Grouping, Span),
@@ -22,17 +23,19 @@ pub struct ExprStmt {
 }
 
 #[derive(Debug, Clone)]
-pub struct Assign {
-    pub assignee: Assignee,
-    pub assign_sign: Span,
+pub struct VarDecl {
+    pub ident: Ident,
+    pub decl_sign: Span,
     pub value: Expr,
     pub semicolon: Span,
 }
 
 #[derive(Debug, Clone)]
-pub enum Assignee {
-    Expr(Expr),
-    Let(Ident),
+pub struct Assign {
+    pub assignee: Expr,
+    pub assign_sign: Span,
+    pub value: Expr,
+    pub semicolon: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -83,4 +86,23 @@ pub struct UnaryOperation {
     pub op_span: Span,
     pub operand: Expr,
     pub operator: UnaryOperator,
+}
+
+impl Expr {
+    pub fn span(&self) -> Span {
+        match self {
+            &Self::Grouping(Grouping {
+                left_paren,
+                right_paren,
+                ..
+            }) => left_paren | right_paren,
+            &Self::Int(span, _) => span,
+            Self::BinaryOperation(box BinaryOperation { lhs, rhs, .. }) => lhs.span() | rhs.span(),
+            Self::UnaryOperation(box UnaryOperation {
+                op_span, operand, ..
+            }) => *op_span | operand.span(),
+            Self::If(box IfExpr { if_span, else_, .. }) => *if_span | else_.span(),
+            &Self::Ident(Ident { span, .. }) => span,
+        }
+    }
 }

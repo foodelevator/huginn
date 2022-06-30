@@ -3,8 +3,8 @@ use std::iter::Peekable;
 use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
     syntax_tree::{
-        Assign, Assignee, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
-        UnaryOperation,
+        Assign, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
+        UnaryOperation, VarDecl,
     },
     tokens::{Token, TokenKind},
     Diagnostic,
@@ -60,6 +60,7 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
 
     pub fn stmt(&mut self) -> Option<Stmt> {
         match self.input.peek() {
+            /*
             Some(Token {
                 kind: TokenKind::Let,
                 ..
@@ -82,12 +83,13 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                     semicolon,
                 }))
             }
+            */
             Some(&Token {
                 kind: TokenKind::If,
                 span,
             }) => {
                 self.input.next();
-                self.finish_if_stmt(span)
+                return self.finish_if_stmt(span);
             }
             Some(&Token {
                 kind: TokenKind::Print,
@@ -97,41 +99,54 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 let left_paren = assert_next!(self, TokenKind::LeftParen)?;
                 let g = self.finish_grouping(left_paren)?;
                 let semicolon = assert_next!(self, TokenKind::Semicolon)?;
-                match g {
+                return match g {
                     Expr::Grouping(g) => Some(Stmt::Print(span, g, semicolon)),
                     _ => unreachable!(),
-                }
+                };
+            }
+            _ => {}
+        }
+        let expr = self.expr()?;
+        match self.input.peek() {
+            Some(&Token {
+                kind: TokenKind::Equal,
+                span: assign_sign,
+            }) => {
+                self.input.next();
+                let value = self.expr()?;
+                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
+                Some(Stmt::Assign(Assign {
+                    assignee: expr,
+                    assign_sign,
+                    value,
+                    semicolon,
+                }))
+            }
+            Some(&Token {
+                kind: TokenKind::ColonEqual,
+                span: decl_sign,
+            }) => {
+                let ident = match expr {
+                    Expr::Ident(ident) => ident,
+                    expr => {
+                        self.invalid_variable_ident(expr.span());
+                        return None;
+                    }
+                };
+
+                self.input.next();
+                let value = self.expr()?;
+                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
+                Some(Stmt::VarDecl(VarDecl {
+                    ident,
+                    decl_sign,
+                    value,
+                    semicolon,
+                }))
             }
             _ => {
-                let expr = self.expr()?;
-                if let Some(&Token {
-                    kind: TokenKind::LeftArrow,
-                    span: assign_sign,
-                }) = self.input.peek()
-                {
-                    self.input.next();
-                    let value = self.expr()?;
-                    let semicolon = assert_next!(self, TokenKind::Semicolon)?;
-                    Some(Stmt::Assign(Assign {
-                        assignee: Assignee::Expr(expr),
-                        assign_sign,
-                        value,
-                        semicolon,
-                    }))
-                } else {
-                    let semicolon = assert_next!(self, TokenKind::Semicolon)?;
-                    // let semicolon = match self.input.peek() {
-                    //     Some(&Token {
-                    //         kind: TokenKind::Semicolon,
-                    //         span,
-                    //     }) => {
-                    //         self.input.next();
-                    //         Some(span)
-                    //     }
-                    //     _ => None,
-                    // };
-                    Some(Stmt::Expr(ExprStmt { expr, semicolon }))
-                }
+                let semicolon = assert_next!(self, TokenKind::Semicolon)?;
+                Some(Stmt::Expr(ExprStmt { expr, semicolon }))
             }
         }
     }
@@ -164,7 +179,7 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
 
     fn comparison(&mut self) -> Option<Expr> {
         self.parse_left_associative_binary_operation(Self::terms, |kind| match kind {
-            TokenKind::Equal => Some(BinaryOperator::Equal),
+            TokenKind::EqualEqual => Some(BinaryOperator::Equal),
             TokenKind::BangEqual => Some(BinaryOperator::NotEqual),
             TokenKind::Less => Some(BinaryOperator::Less),
             TokenKind::LessEqual => Some(BinaryOperator::LessEqual),
@@ -311,5 +326,10 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 "Expected token, found EOF",
             ));
         }
+    }
+
+    fn invalid_variable_ident(&mut self, location: Span) {
+        self.diagnostics
+            .push(Diagnostic::error(location, "Invalid variable identifier"));
     }
 }

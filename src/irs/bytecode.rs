@@ -16,13 +16,13 @@ pub enum Instr {
         dest: Value,
         val: i64,
     },
-    BinaryOperator {
+    BinaryOperation {
         dest: Value,
         lhs: Value,
         rhs: Value,
         operator: BinaryOperator,
     },
-    UnaryOperator {
+    UnaryOperation {
         dest: Value,
         operand: Value,
         operator: UnaryOperator,

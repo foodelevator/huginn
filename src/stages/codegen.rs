@@ -64,7 +64,8 @@ pub fn run_jit(bytecode_func: &Function) -> i64 {
 
     let func_ptr = jit_mod.get_finalized_function(main_id);
 
-    // SAFETY: who cares about stuff like that?
+    // SAFETY: Not sure about calling conventions here but at least the rest of the signature is
+    // correct, and so far the language can't do anything unsafe :^)
     let callable: fn() -> i64 = unsafe { mem::transmute(func_ptr) };
 
     let result = callable();
@@ -149,7 +150,7 @@ impl<'f> CodegenContext<'f> {
         b.finalize();
 
         let flags = cl::settings::Flags::new(cl::settings::builder());
-        if let Err(err) = cranelift::codegen::verify_function(&func, &flags) {
+        if let Err(err) = cranelift::codegen::verify_function(func, &flags) {
             panic!("codegen verify: {}", err);
         }
     }
@@ -160,8 +161,8 @@ impl<'f> CodegenContext<'f> {
             for instr in &block.instrs {
                 let var = match *instr {
                     Instr::Const { dest, .. } => dest,
-                    Instr::BinaryOperator { dest, .. } => dest,
-                    Instr::UnaryOperator { dest, .. } => dest,
+                    Instr::BinaryOperation { dest, .. } => dest,
+                    Instr::UnaryOperation { dest, .. } => dest,
                     Instr::Mov { dest, .. } => dest,
                     Instr::Jump(_) => continue,
                     Instr::JumpIf { .. } => continue,
@@ -188,7 +189,7 @@ impl<'f> CodegenContext<'f> {
                 let res = b.ins().iconst(cl::I64, val);
                 b.def_var(cl::Variable::with_u32(dest), res);
             }
-            Instr::BinaryOperator {
+            Instr::BinaryOperation {
                 dest,
                 lhs,
                 rhs,
@@ -199,7 +200,7 @@ impl<'f> CodegenContext<'f> {
                 let res = self.gen_bin_op(b, operator, lhs, rhs);
                 b.def_var(cl::Variable::with_u32(dest), res);
             }
-            Instr::UnaryOperator {
+            Instr::UnaryOperation {
                 dest,
                 operand,
                 operator,

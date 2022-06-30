@@ -1,7 +1,7 @@
 testprog: output.o asmlib.o
 	ld -o $@ $^
 
-output.o: testsrc
+output.o: src/tests/testsrc
 	cargo r build $<
 
 asmlib.o: asmlib.s

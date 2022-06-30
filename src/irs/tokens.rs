@@ -23,16 +23,15 @@ pub enum TokenKind {
     Less,
     Greater,
 
+    ColonEqual,
+    EqualEqual,
     BangEqual,
     LessEqual,
     GreaterEqual,
 
-    LeftArrow,
-
     If,
     Then,
     Else,
-    Let,
 
     Ident(String),
     Print,

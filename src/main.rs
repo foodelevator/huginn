@@ -8,7 +8,7 @@ use compiler::common::Ident;
 use compiler::compilation::{compile_block, compile_expr, compile_stmt};
 use compiler::lexing::Lexer;
 use compiler::parsing::Parser;
-use compiler::syntax_tree::{Assignee, Expr, ExprStmt, Stmt};
+use compiler::syntax_tree::{Assign, Expr, ExprStmt, Stmt, VarDecl};
 use compiler::{codegen, Diagnostic};
 
 fn main() {
@@ -141,14 +141,16 @@ pub fn run_stmt(
 
     if mode == Mode::Run {
         let res = codegen::run_jit(&func);
-        if let Stmt::Assign(assign) = stmt {
-            match assign.assignee {
-                Assignee::Let(Ident { name, .. })
-                | Assignee::Expr(Expr::Ident(Ident { name, .. })) => {
-                    scope.insert(name, res);
-                }
-                _ => {}
-            }
+        if let Stmt::Assign(Assign {
+            assignee: Expr::Ident(Ident { name, .. }),
+            ..
+        })
+        | Stmt::VarDecl(VarDecl {
+            ident: Ident { name, .. },
+            ..
+        }) = stmt
+        {
+            scope.insert(name, res);
         }
         if print_result {
             println!("{}", res);

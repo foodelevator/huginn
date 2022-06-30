@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     bytecode::{Block as BCBlock, BlockId, Function, Instr, Value},
     syntax_tree::{
-        Assign, Assignee, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
-        UnaryOperation,
+        Assign, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
+        UnaryOperation, VarDecl,
     },
 };
 
@@ -90,23 +90,16 @@ impl Compiler {
                 let dest = self.var();
                 self.rval(expr, dest);
             }
+            Stmt::VarDecl(VarDecl { ident, value, .. }) => {
+                let dest = self.var();
+                self.rval(value, dest);
+                self.scope.insert(ident.name.clone(), dest);
+            }
             Stmt::Assign(Assign {
                 assignee, value, ..
             }) => {
-                let (dest, ident) = match assignee {
-                    Assignee::Expr(expr) => (self.lval(expr), None),
-                    Assignee::Let(ident) => {
-                        let var = self.var();
-                        (var, Some(ident))
-                    }
-                };
+                let dest = self.lval(assignee);
                 self.rval(value, dest);
-                // This must be done after `self.rval` since we allow variable shadowing and
-                // `value` might use an old variable with the same name as the one we're defining
-                // here.
-                if let Some(ident) = ident {
-                    self.scope.insert(ident.name.clone(), dest);
-                }
             }
             Stmt::If(if_stmt) => {
                 self.if_stmt(if_stmt);
@@ -151,7 +144,7 @@ impl Compiler {
         self.rval(&bin_op.lhs, lhs);
         let rhs = self.var();
         self.rval(&bin_op.rhs, rhs);
-        self.emit(Instr::BinaryOperator {
+        self.emit(Instr::BinaryOperation {
             dest,
             lhs,
             rhs,
@@ -163,7 +156,7 @@ impl Compiler {
         let operand = self.var();
         self.rval(&unary_op.operand, operand);
         let operator = unary_op.operator;
-        self.emit(Instr::UnaryOperator {
+        self.emit(Instr::UnaryOperation {
             dest,
             operand,
             operator,

@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::Range;
+use std::ops::{BitOr, Range};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Span {
@@ -35,6 +35,14 @@ impl Span {
 
     pub fn display<'c>(&self, code: &'c str) -> DisplaySpan<'_, 'c> {
         DisplaySpan { span: self, code }
+    }
+}
+
+impl BitOr for Span {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self {
+        Self::new(self.start.min(rhs.start)..self.end.max(rhs.end))
     }
 }
 

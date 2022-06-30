@@ -7,7 +7,7 @@ use crate::{
     compilation::compile_expr,
     lexing::Lexer,
     parsing::Parser,
-    syntax_tree::{Assign, Assignee, BinaryOperation, Expr, ExprStmt, Grouping, Stmt},
+    syntax_tree::{BinaryOperation, Expr, Grouping, Stmt, VarDecl},
     tokens::TokenKind,
 };
 
@@ -168,14 +168,14 @@ fn compile_basic_arithmetic() {
             Instr::Const { val: 1, dest: one_a },
             Instr::Const { val: 2, dest: two_a },
             Instr::Const { val: 3, dest: three_a },
-            Instr::BinaryOperator {
+            Instr::BinaryOperation {
                 operator: BinaryOperator::Multiply,
                 lhs: two_b,
                 rhs: three_b,
                 dest: prod_1_a,
                 ..
             },
-            Instr::BinaryOperator {
+            Instr::BinaryOperation {
                 operator: BinaryOperator::Add,
                 lhs: one_b,
                 rhs: prod_1_b,
@@ -184,14 +184,14 @@ fn compile_basic_arithmetic() {
             },
             Instr::Const { val: 4, dest: four_a },
             Instr::Const { val: 5, dest: five_a },
-            Instr::BinaryOperator {
+            Instr::BinaryOperation {
                 operator: BinaryOperator::Divide,
                 lhs: four_b,
                 rhs: five_b,
                 dest: prod_3_a,
                 ..
             },
-            Instr::BinaryOperator {
+            Instr::BinaryOperation {
                 operator: BinaryOperator::Subtract,
                 lhs: prod_2_b,
                 rhs: prod_3_b,
@@ -231,8 +231,8 @@ fn codegen_basic_arithmetic() {
 
 #[test]
 fn codegen_booleans() {
-    for (code, expected) in [("1 <= 2", 1), ("!-2", 0), ("3 = 1 + 2", 1)] {
-        assert_eq!(expected, run_expr(code));
+    for (code, expected) in [("1 <= 2", 1), ("!-2", 0), ("3 == 1 + 2", 1)] {
+        assert_eq!(expected, run_expr(code), "{}", code);
     }
 }
 
@@ -241,11 +241,29 @@ fn codegen_if() {
     assert_eq!(42 + 1337, run_expr("42 + if 69 then 1337 else 42"));
 }
 
+// #[test]
+// fn variable_shadowing() {
+//     let code = "{
+//         a := 2;
+//         a := a + 2;
+//         return a;
+//     }";
+//     let (mut d1, mut d2) = (vec![], vec![]);
+//     let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
+//     let mut parser = Parser::new(&mut lexer, &mut d2);
+//     let block = parser.block();
+//     assert!(d1.is_empty(), "{:?}", d1);
+//     assert!(d2.is_empty(), "{:?}", d2);
+//     let block = block.unwrap();
+//     let func = compile_block(&block);
+//     assert_eq!(4, codegen::run_jit(&func))
+// }
+
 #[test]
 fn parse_block() {
     let code = "{
-        let a <- 2;
-        a + a
+        a := 2;
+        print(a + a);
     }";
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
@@ -256,22 +274,26 @@ fn parse_block() {
     let block = block.unwrap();
     assert_matches!(
         &block.stmts[0],
-        Stmt::Assign(Assign {
-            assignee: Assignee::Let(Ident { name, .. }),
+        Stmt::VarDecl(VarDecl {
+            ident: Ident { name, .. },
             value: Expr::Int(_, 2),
             ..
         }) if name == "a",
     );
     assert_matches!(
         &block.stmts[1],
-        Stmt::Expr(ExprStmt {
-            expr: Expr::BinaryOperation(box BinaryOperation {
-                lhs: Expr::Ident(Ident { name: name1, .. }),
-                rhs: Expr::Ident(Ident { name: name2, .. }),
-                operator: BinaryOperator::Add,
+        Stmt::Print(
+            _,
+            Grouping {
+                expr: box Expr::BinaryOperation(box BinaryOperation {
+                    lhs: Expr::Ident(Ident { name: name1, .. }),
+                    rhs: Expr::Ident(Ident { name: name2, .. }),
+                    operator: BinaryOperator::Add,
+                    ..
+                }),
                 ..
-            }),
-            semicolon: None,
-        }) if name1 == "a" && name2 == "a",
+            },
+            _,
+        ) if name1 == "a" && name2 == "a",
     );
 }
