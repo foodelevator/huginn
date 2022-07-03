@@ -4,7 +4,7 @@ use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
     syntax_tree::{
         Assign, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
-        UnaryOperation, VarDecl,
+        UnaryOperation, VarDecl, While,
     },
     tokens::{Token, TokenKind},
     Diagnostic,
@@ -66,6 +66,13 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
             }) => {
                 self.input.next();
                 return self.finish_if_stmt(span);
+            }
+            Some(&Token {
+                kind: TokenKind::While,
+                span,
+            }) => {
+                self.input.next();
+                return self.finish_while(span);
             }
             Some(&Token {
                 kind: TokenKind::Print,
@@ -141,7 +148,7 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
         }
     }
 
-    pub fn finish_if_stmt(&mut self, if_span: Span) -> Option<Stmt> {
+    fn finish_if_stmt(&mut self, if_span: Span) -> Option<Stmt> {
         let cond = self.expr()?;
         let then = self.block()?;
         let else_ = match self.input.peek() {
@@ -160,6 +167,16 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
             cond,
             then,
             else_,
+        }))
+    }
+
+    pub fn finish_while(&mut self, while_span: Span) -> Option<Stmt> {
+        let cond = self.expr()?;
+        let body = self.block()?;
+        Some(Stmt::While(While {
+            while_span,
+            cond,
+            body,
         }))
     }
 

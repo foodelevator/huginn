@@ -89,6 +89,7 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
 
         match &*word {
             "if" => TokenKind::If,
+            "while" => TokenKind::While,
             "then" => TokenKind::Then,
             "else" => TokenKind::Else,
             "print" => TokenKind::Print,

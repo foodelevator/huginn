@@ -13,6 +13,7 @@ pub enum Stmt {
     VarDecl(VarDecl),
     Assign(Assign),
     If(IfStmt),
+    While(While),
     Print(Span, Expr, Span),
     Return(Span, Expr, Span),
 }
@@ -45,6 +46,13 @@ pub struct IfStmt {
     pub cond: Expr,
     pub then: Block,
     pub else_: Option<(Span, Block)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct While {
+    pub while_span: Span,
+    pub cond: Expr,
+    pub body: Block,
 }
 
 #[derive(Debug, Clone)]

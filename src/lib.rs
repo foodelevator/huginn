@@ -6,7 +6,7 @@ mod stages;
 
 pub use diagnostic::Diagnostic;
 pub use irs::{bytecode, common, syntax_tree, tokens};
-pub use stages::{codegen, compilation, lexing, parsing, link};
+pub use stages::{codegen, compilation, lexing, link, parsing};
 
 #[cfg(test)]
 mod tests;

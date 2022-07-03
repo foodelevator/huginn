@@ -5,6 +5,7 @@ fn main() {
 
     let output = Command::new("nasm")
         .args(["-f", "elf64", "-o", "libasm.o", "libasm.s"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(0));
 }

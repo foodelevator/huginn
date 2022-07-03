@@ -4,7 +4,7 @@ use crate::{
     bytecode::{Block as BCBlock, BlockId, Function, Instr, Value},
     syntax_tree::{
         Assign, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
-        UnaryOperation, VarDecl,
+        UnaryOperation, VarDecl, While,
     },
 };
 
@@ -101,8 +101,11 @@ impl Compiler {
                 let dest = self.lval(assignee);
                 self.rval(value, dest);
             }
-            Stmt::If(if_stmt) => {
-                self.if_stmt(if_stmt);
+            Stmt::If(if_) => {
+                self.if_stmt(if_);
+            }
+            Stmt::While(while_) => {
+                self.while_(while_);
             }
             Stmt::Print(_, expr, _) => {
                 let var = self.var();
@@ -189,6 +192,30 @@ impl Compiler {
             self.block(&else_.1);
         }
         self.emit(Instr::Jump(done));
+
+        self.switch_to_block(done);
+    }
+
+    fn while_(&mut self, while_: &While) {
+        let cond_block = self.create_block();
+        let body = self.create_block();
+        let done = self.create_block();
+        self.emit(Instr::Jump(body));
+
+        self.switch_to_block(cond_block);
+
+        let cond = self.var();
+        self.rval(&while_.cond, cond);
+        self.emit(Instr::JumpIf {
+            cond,
+            block_id: body,
+        });
+        self.emit(Instr::Jump(done));
+
+        self.switch_to_block(body);
+
+        self.block(&while_.body);
+        self.emit(Instr::Jump(cond_block));
 
         self.switch_to_block(done);
     }
