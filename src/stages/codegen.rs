@@ -1,4 +1,4 @@
-use std::{collections::HashSet, mem, path::Path};
+use std::{collections::HashSet, mem};
 
 mod cl {
     pub use cranelift::{
@@ -76,7 +76,7 @@ pub fn run_jit(bytecode_func: &Function) -> i64 {
     result
 }
 
-pub fn output_to_file<P: AsRef<Path>>(bytecode_func: &Function, filename: P) {
+pub fn build_object(bytecode_func: &Function) -> Vec<u8> {
     let target_isa = cl::isa::lookup_by_name("x86_64-linux")
         .unwrap()
         .finish(cl::settings::Flags::new(cl::settings::builder()))
@@ -110,9 +110,7 @@ pub fn output_to_file<P: AsRef<Path>>(bytecode_func: &Function, filename: P) {
 
     let product = obj_mod.finish();
 
-    let bytes = product.emit().unwrap();
-
-    std::fs::write(filename, bytes).unwrap();
+    product.emit().unwrap()
 }
 
 struct CodegenContext<'f> {

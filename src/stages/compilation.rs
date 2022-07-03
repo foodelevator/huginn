@@ -106,12 +106,12 @@ impl Compiler {
             }
             Stmt::Print(_, expr, _) => {
                 let var = self.var();
-                self.rval(&expr, var);
+                self.rval(expr, var);
                 self.emit(Instr::Print(var))
             }
             Stmt::Return(_, expr, _) => {
                 let var = self.var();
-                self.rval(&expr, var);
+                self.rval(expr, var);
                 self.emit(Instr::Return(var));
             }
         }

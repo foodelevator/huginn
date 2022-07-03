@@ -7,18 +7,20 @@ use std::{collections::HashMap, env, fs, process};
 use compiler::common::Ident;
 use compiler::compilation::{compile_block, compile_expr, compile_stmt};
 use compiler::lexing::Lexer;
+use compiler::link::link;
 use compiler::parsing::Parser;
 use compiler::syntax_tree::{Assign, Expr, ExprStmt, Stmt, VarDecl};
 use compiler::{codegen, Diagnostic};
 
 fn main() {
     let args = env::args();
-    let mut mode = Mode::Run;
+    let mut mode = Mode::Parse;
     let mut path = None;
     for arg in args.skip(1) {
         match &*arg {
             "parse" => mode = Mode::Parse,
             "bytecode" => mode = Mode::Bytecode,
+            "object" => mode = Mode::Object,
             "build" => mode = Mode::Build,
             "run" => mode = Mode::Run,
             name if path.is_none() => path = Some(name.to_string()),
@@ -40,13 +42,13 @@ fn main() {
                 process::exit(1);
             }
         };
-        if let Err(err) = run(file, mode) {
+        if let Err(err) = handle(file, mode) {
             eprintln!("{}", err);
             process::exit(1);
         }
     } else {
         let input = stdin();
-        if let Err(err) = run(input, mode) {
+        if let Err(err) = handle(input, mode) {
             eprintln!("{}", err);
             process::exit(1);
         }
@@ -56,9 +58,79 @@ fn main() {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Parse,
+    Object,
     Build,
     Bytecode,
     Run,
+}
+
+pub fn handle(mut input: impl Read, mode: Mode) -> Result<(), Box<dyn Error>> {
+    let mut src = String::new();
+    input.read_to_string(&mut src)?;
+    let src = src;
+
+    let mut lexer_diagnostics = Vec::new();
+    let mut lexer = Lexer::new(src.chars().peekable(), &mut lexer_diagnostics).peekable();
+
+    let mut parsing_diagnostics = Vec::new();
+    let block = Parser::new(&mut lexer, &mut parsing_diagnostics).block();
+    if let Some(span) = lexer.peek().map(|t| t.span) {
+        if parsing_diagnostics.is_empty() {
+            lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
+        }
+    }
+
+    lexer_diagnostics.append(&mut parsing_diagnostics);
+    let diagnostics = lexer_diagnostics;
+
+    if !diagnostics.is_empty() {
+        for d in diagnostics {
+            eprintln!("{}", d.display(&src));
+        }
+    }
+
+    let block = if let Some(block) = block {
+        block
+    } else {
+        return Ok(());
+    };
+
+    if mode == Mode::Parse {
+        println!("{:#?}", block);
+        return Ok(());
+    }
+
+    let func = compile_block(&block);
+
+    if mode == Mode::Bytecode {
+        for (i, block) in func.blocks.iter().enumerate() {
+            println!("block{}:", i);
+            for instr in &block.instrs {
+                println!("    {:?}", instr);
+            }
+        }
+        return Ok(());
+    }
+
+    if mode == Mode::Object || mode == Mode::Build {
+        let obj = codegen::build_object(&func);
+        if mode == Mode::Object {
+            fs::write("output.o", obj)?;
+        } else {
+            link(obj)?;
+        }
+        return Ok(());
+    }
+
+    if mode == Mode::Run {
+        let res = codegen::run_jit(&func);
+        if res != 0 {
+            println!("{}", res);
+        }
+        return Ok(());
+    }
+
+    unimplemented!("Someone missed something for mode {:?}", mode)
 }
 
 pub fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
@@ -135,7 +207,8 @@ pub fn run_stmt(
     }
 
     if mode == Mode::Build {
-        codegen::output_to_file(&func, "output.o");
+        let obj = codegen::build_object(&func);
+        fs::write("output.o", obj)?;
         return Ok(ControlFlow::Break(()));
     }
 
@@ -156,70 +229,6 @@ pub fn run_stmt(
             println!("{}", res);
         }
         return Ok(ControlFlow::Continue(()));
-    }
-
-    unimplemented!("Unimplemented mode {:?}", mode)
-}
-
-pub fn run(mut input: impl Read, mode: Mode) -> Result<(), Box<dyn Error>> {
-    let mut src = String::new();
-    input.read_to_string(&mut src)?;
-    let src = src;
-
-    let mut lexer_diagnostics = Vec::new();
-    let mut lexer = Lexer::new(src.chars().peekable(), &mut lexer_diagnostics).peekable();
-
-    let mut parsing_diagnostics = Vec::new();
-    let block = Parser::new(&mut lexer, &mut parsing_diagnostics).block();
-    if let Some(span) = lexer.peek().map(|t| t.span) {
-        if parsing_diagnostics.is_empty() {
-            lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
-        }
-    }
-
-    lexer_diagnostics.append(&mut parsing_diagnostics);
-    let diagnostics = lexer_diagnostics;
-
-    if !diagnostics.is_empty() {
-        for d in diagnostics {
-            eprintln!("{}", d.display(&src));
-        }
-    }
-
-    let block = if let Some(block) = block {
-        block
-    } else {
-        return Ok(());
-    };
-
-    if mode == Mode::Parse {
-        println!("{:#?}", block);
-        return Ok(());
-    }
-
-    let func = compile_block(&block);
-
-    if mode == Mode::Bytecode {
-        for (i, block) in func.blocks.iter().enumerate() {
-            println!("block{}:", i);
-            for instr in &block.instrs {
-                println!("    {:?}", instr);
-            }
-        }
-        return Ok(());
-    }
-
-    if mode == Mode::Build {
-        codegen::output_to_file(&func, "output.o");
-        return Ok(());
-    }
-
-    if mode == Mode::Run {
-        let res = codegen::run_jit(&func);
-        if res != 0 {
-            println!("{}", res);
-        }
-        return Ok(());
     }
 
     unimplemented!("Unimplemented mode {:?}", mode)

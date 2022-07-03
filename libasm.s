@@ -2,16 +2,30 @@ bits 64
 
 extern main
 
-section .text
+section .data
+argc: dq 0
+argv: dq 0
 
+section .text
 global _start
 _start:
+    pop rdi
+    mov [argc], rdi
+    mov [argv], rsp
+
     call main
+
     mov rdi, 0
     mov rax, 0x3c ; sys_exit
     syscall
 
+section .data
+buf: db 20 dup 0
+lf: db 10
+bend:
+
 ; FIXME: crashes when trying to print -9223372036854775808 (= i64 min)
+section .text
 global print
 print: ; System V calling conv
     xor r9d, r9d
@@ -47,9 +61,3 @@ write_syscall:
     sub rdx, rsi ; count
     syscall
     ret
-
-section .data
-
-buf: db 20 dup 0
-lf: db 10
-bend:
