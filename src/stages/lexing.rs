@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 
 use crate::{
-    common::Span,
+    common::{FileId, Span},
     tokens::{Token, TokenKind},
     Diagnostic,
 };
@@ -10,6 +10,7 @@ pub struct Lexer<'d, I: Iterator<Item = char>> {
     input: Peekable<I>,
     index: usize,
     diagnostics: &'d mut Vec<Diagnostic>,
+    file: FileId,
 }
 
 impl<'d, I: Iterator<Item = char>> Iterator for Lexer<'d, I> {
@@ -26,11 +27,12 @@ impl<'d, I: Iterator<Item = char>> Iterator for Lexer<'d, I> {
 }
 
 impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
-    pub fn new(input: Peekable<I>, diagnostics: &'d mut Vec<Diagnostic>) -> Self {
+    pub fn new(input: Peekable<I>, file: FileId, diagnostics: &'d mut Vec<Diagnostic>) -> Self {
         Self {
             input,
             index: 0,
             diagnostics,
+            file,
         }
     }
 
@@ -59,9 +61,10 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
             '>' => TokenKind::Greater,
             ':' if self.next_if_eq('=').is_some() => TokenKind::ColonEqual,
             ';' => TokenKind::Semicolon,
+            '#' => return self.comment(),
             ws if ws.is_whitespace() => return None,
-            d @ '0'..='9' => self.lex_number(d),
-            c if c.is_alphabetic() => self.lex_word(c),
+            d @ '0'..='9' => self.number(d),
+            c if c.is_alphabetic() => self.word(c),
             c => {
                 self.unexpected_char(c);
                 return None;
@@ -69,12 +72,17 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
         };
 
         Some(Token {
-            span: Span::new(start..self.index),
+            span: Span::new(start..self.index, self.file),
             kind,
         })
     }
 
-    fn lex_word(&mut self, first: char) -> TokenKind {
+    fn comment(&mut self) -> Option<Token> {
+        while self.next_if(|c| c != '\n').is_some() {}
+        None
+    }
+
+    fn word(&mut self, first: char) -> TokenKind {
         let mut word = String::from(first);
 
         loop {
@@ -99,7 +107,7 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
         }
     }
 
-    fn lex_number(&mut self, first: char) -> TokenKind {
+    fn number(&mut self, first: char) -> TokenKind {
         let mut base = 10;
         if first == '0' {
             match self.peek_char() {
@@ -165,7 +173,7 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
 
     fn unexpected_char(&mut self, _c: char) {
         self.diagnostics.push(Diagnostic::error(
-            Span::single(self.index),
+            Span::single(self.index, self.file),
             "Unexpected char",
         ))
     }

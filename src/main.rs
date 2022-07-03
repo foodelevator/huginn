@@ -5,7 +5,7 @@ use std::ops::ControlFlow;
 use std::{collections::HashMap, env, fs, process};
 
 use compiler::common::Ident;
-use compiler::compilation::{compile_block, compile_expr, compile_stmt};
+use compiler::compilation::{compile_expr, compile_file, compile_stmt};
 use compiler::lexing::Lexer;
 use compiler::link::link;
 use compiler::parsing::Parser;
@@ -35,20 +35,20 @@ fn main() {
     }
 
     if let Some(path) = path {
-        let file = match fs::File::open(path) {
+        let file = match fs::File::open(&path) {
             Ok(file) => file,
             Err(err) => {
                 eprintln!("{}", err);
                 process::exit(1);
             }
         };
-        if let Err(err) = handle(file, mode) {
+        if let Err(err) = handle_file(file, &path, mode) {
             eprintln!("{}", err);
             process::exit(1);
         }
     } else {
         let input = stdin();
-        if let Err(err) = handle(input, mode) {
+        if let Err(err) = handle_file(input, "<stdin>", mode) {
             eprintln!("{}", err);
             process::exit(1);
         }
@@ -64,16 +64,16 @@ pub enum Mode {
     Run,
 }
 
-pub fn handle(mut input: impl Read, mode: Mode) -> Result<(), Box<dyn Error>> {
+pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(), Box<dyn Error>> {
     let mut src = String::new();
     input.read_to_string(&mut src)?;
     let src = src;
 
     let mut lexer_diagnostics = Vec::new();
-    let mut lexer = Lexer::new(src.chars().peekable(), &mut lexer_diagnostics).peekable();
+    let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut lexer_diagnostics).peekable();
 
     let mut parsing_diagnostics = Vec::new();
-    let block = Parser::new(&mut lexer, &mut parsing_diagnostics).block();
+    let file = Parser::new(&mut lexer, &mut parsing_diagnostics).file();
     if let Some(span) = lexer.peek().map(|t| t.span) {
         if parsing_diagnostics.is_empty() {
             lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
@@ -85,22 +85,22 @@ pub fn handle(mut input: impl Read, mode: Mode) -> Result<(), Box<dyn Error>> {
 
     if !diagnostics.is_empty() {
         for d in diagnostics {
-            eprintln!("{}", d.display(&src));
+            eprintln!("{}", d.display(&src, |_| filename));
         }
     }
 
-    let block = if let Some(block) = block {
-        block
+    let file = if let Some(file) = file {
+        file
     } else {
         return Ok(());
     };
 
     if mode == Mode::Parse {
-        println!("{:#?}", block);
+        println!("{:#?}", file);
         return Ok(());
     }
 
-    let func = compile_block(&block);
+    let func = compile_file(&file);
 
     if mode == Mode::Bytecode {
         for (i, block) in func.blocks.iter().enumerate() {
@@ -159,7 +159,7 @@ pub fn run_stmt(
     scope: &mut HashMap<String, i64>,
 ) -> Result<ControlFlow<()>, Box<dyn Error>> {
     let mut lexer_diagnostics = Vec::new();
-    let mut lexer = Lexer::new(src.chars().peekable(), &mut lexer_diagnostics).peekable();
+    let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut lexer_diagnostics).peekable();
 
     let mut parsing_diagnostics = Vec::new();
     let stmt = Parser::new(&mut lexer, &mut parsing_diagnostics).stmt();
@@ -174,7 +174,7 @@ pub fn run_stmt(
 
     if !diagnostics.is_empty() {
         for d in diagnostics {
-            eprintln!("{}", d.display(src));
+            eprintln!("{}", d.display(src, |_| "<stdin>"));
         }
     }
 

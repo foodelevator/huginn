@@ -3,14 +3,16 @@ use std::collections::HashMap;
 use crate::{
     bytecode::{Block as BCBlock, BlockId, Function, Instr, Value},
     syntax_tree::{
-        Assign, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
+        Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Stmt,
         UnaryOperation, VarDecl, While,
     },
 };
 
-pub fn compile_block(block: &Block) -> Function {
+pub fn compile_file(file: &File) -> Function {
     let mut compiler = Compiler::new();
-    compiler.block(block);
+    for stmt in &file.stmts {
+        compiler.stmt(stmt);
+    }
 
     // Since we at the moment always must return a value:
     let ret = compiler.var();

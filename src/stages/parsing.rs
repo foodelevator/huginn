@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
     syntax_tree::{
-        Assign, BinaryOperation, Block, Expr, ExprStmt, Grouping, IfExpr, IfStmt, Stmt,
+        Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Stmt,
         UnaryOperation, VarDecl, While,
     },
     tokens::{Token, TokenKind},
@@ -34,6 +34,14 @@ macro_rules! assert_next {
 impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
     pub fn new(input: &'i mut Peekable<I>, diagnostics: &'d mut Vec<Diagnostic>) -> Self {
         Self { input, diagnostics }
+    }
+
+    pub fn file(&mut self) -> Option<File> {
+        let mut stmts = Vec::new();
+        while self.input.peek().is_some() {
+            stmts.push(self.stmt()?);
+        }
+        Some(File { stmts })
     }
 
     pub fn block(&mut self) -> Option<Block> {

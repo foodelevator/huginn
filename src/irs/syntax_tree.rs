@@ -1,6 +1,11 @@
 use crate::common::{BinaryOperator, Ident, Span, UnaryOperator};
 
 #[derive(Debug, Clone)]
+pub struct File {
+    pub stmts: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Block {
     pub left_curly: Span,
     pub stmts: Vec<Stmt>,

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::common::Span;
+use crate::common::{FileId, Span};
 
 #[derive(Debug)]
 pub struct Diagnostic {
@@ -40,20 +40,26 @@ impl Diagnostic {
         }
     }
 
-    pub fn display<'c>(&self, code: &'c str) -> DisplayDiagnostic<'_, 'c> {
+    pub fn display<'c, 'f, F: Fn(FileId) -> &'f str>(
+        &self,
+        code: &'c str,
+        filename: F,
+    ) -> DisplayDiagnostic<'_, 'c, 'f, F> {
         DisplayDiagnostic {
             diagnostic: self,
             code,
+            filename,
         }
     }
 }
 
-pub struct DisplayDiagnostic<'d, 'c> {
+pub struct DisplayDiagnostic<'d, 'c, 'f, F: Fn(FileId) -> &'f str> {
     diagnostic: &'d Diagnostic,
     code: &'c str,
+    filename: F,
 }
 
-impl fmt::Display for DisplayDiagnostic<'_, '_> {
+impl<'f, F: Fn(FileId) -> &'f str> fmt::Display for DisplayDiagnostic<'_, '_, 'f, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.diagnostic;
         write!(
@@ -61,7 +67,7 @@ impl fmt::Display for DisplayDiagnostic<'_, '_> {
             "{}: {}\n{}",
             d.level,
             d.message,
-            d.location.display(self.code)
+            d.location.display(self.code, &self.filename)
         )
     }
 }

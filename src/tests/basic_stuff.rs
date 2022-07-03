@@ -4,7 +4,7 @@ use crate::{
     bytecode::Instr,
     codegen,
     common::{BinaryOperator, Ident},
-    compilation::{compile_block, compile_expr},
+    compilation::{compile_expr, compile_file},
     lexing::Lexer,
     parsing::Parser,
     syntax_tree::{BinaryOperation, Expr, Grouping, Stmt, VarDecl},
@@ -19,7 +19,7 @@ fn lex() {
     ";
 
     let mut d = vec![];
-    let tokens: Vec<_> = Lexer::new(input.chars().peekable(), &mut d)
+    let tokens: Vec<_> = Lexer::new(input.chars().peekable(), 0, &mut d)
         .map(|token| token.kind)
         .collect();
 
@@ -52,7 +52,7 @@ fn lex() {
 #[test]
 fn parse_basic_arithmetic() {
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0, &mut d1).peekable();
     let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
@@ -83,7 +83,7 @@ fn parse_basic_arithmetic() {
     );
 
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable(), 0, &mut d1).peekable();
     let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
@@ -104,7 +104,7 @@ fn parse_basic_arithmetic() {
     );
 
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable(), 0, &mut d1).peekable();
     let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
@@ -128,7 +128,7 @@ fn parse_basic_arithmetic() {
     );
 
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable(), 0, &mut d1).peekable();
     let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
     assert_eq!(lexer.next(), None);
     assert!(d1.is_empty(), "{:?}", d1);
@@ -155,7 +155,7 @@ fn parse_basic_arithmetic() {
 #[test]
 fn compile_basic_arithmetic() {
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let expr = parser.expr().unwrap();
     let func = compile_expr(&expr, &HashMap::new());
@@ -215,7 +215,7 @@ fn compile_basic_arithmetic() {
 
 fn run_expr(code: &'static str) -> i64 {
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let expr = parser.expr().unwrap();
     assert!(d1.is_empty(), "{:?}", d1);
@@ -243,19 +243,19 @@ fn codegen_if() {
 
 #[test]
 fn variable_shadowing() {
-    let code = "{
+    let code = "
         a := 2;
         a := a + 2;
         return a;
-    }";
+    ";
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let block = parser.block();
+    let block = parser.file();
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    let block = block.unwrap();
-    let func = compile_block(&block);
+    let file = block.unwrap();
+    let func = compile_file(&file);
     assert_eq!(4, codegen::run_jit(&func))
 }
 
@@ -266,7 +266,7 @@ fn parse_block() {
         print(a + a);
     }";
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(code.chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let block = parser.block();
     assert!(d1.is_empty(), "{:?}", d1);

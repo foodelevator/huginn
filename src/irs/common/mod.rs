@@ -2,6 +2,8 @@ mod span;
 
 pub use span::Span;
 
+pub type FileId = u32;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident {
     pub span: Span,

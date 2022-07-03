@@ -1,7 +1,7 @@
 use std::assert_matches::assert_matches;
 
 use crate::{
-    bytecode::Instr, common::UnaryOperator, compilation::compile_block, lexing::Lexer,
+    bytecode::Instr, common::UnaryOperator, compilation::compile_file, lexing::Lexer,
     parsing::Parser,
 };
 
@@ -12,10 +12,10 @@ fn print() {
     let src = include_str!("print");
 
     let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(src.chars().peekable(), &mut d1).peekable();
+    let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
-    let block = parser.block().unwrap();
-    let func = compile_block(&block);
+    let file = parser.file().unwrap();
+    let func = compile_file(&file);
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     assert_eq!(func.blocks.len(), 1);

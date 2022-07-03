@@ -1,29 +1,34 @@
 use std::fmt;
 use std::ops::{BitOr, Range};
 
+use super::FileId;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
+    pub file: FileId,
 }
 
 impl Span {
-    pub fn new(range: Range<usize>) -> Self {
+    pub fn new(range: Range<usize>, file: FileId) -> Self {
         Self {
             start: range.start,
             end: range.end,
+            file,
         }
     }
 
-    pub fn single(start: usize) -> Self {
+    pub fn single(start: usize, file: FileId) -> Self {
         Self {
             start,
             end: start + 1,
+            file,
         }
     }
 
     pub fn unknown() -> Self {
-        Self::new(0..0)
+        Self::new(0..0, 0)
     }
 
     pub fn range(self) -> Range<usize> {
@@ -33,8 +38,16 @@ impl Span {
         }
     }
 
-    pub fn display<'c>(&self, code: &'c str) -> DisplaySpan<'_, 'c> {
-        DisplaySpan { span: self, code }
+    pub fn display<'c, 'f, F: Fn(FileId) -> &'f str>(
+        &self,
+        code: &'c str,
+        filename: F,
+    ) -> DisplaySpan<'_, 'c, 'f, F> {
+        DisplaySpan {
+            span: self,
+            code,
+            filename,
+        }
     }
 }
 
@@ -42,16 +55,18 @@ impl BitOr for Span {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self {
-        Self::new(self.start.min(rhs.start)..self.end.max(rhs.end))
+        assert_eq!(self.file, rhs.file);
+        Self::new(self.start.min(rhs.start)..self.end.max(rhs.end), self.file)
     }
 }
 
-pub struct DisplaySpan<'s, 'c> {
+pub struct DisplaySpan<'s, 'c, 'f, F: Fn(FileId) -> &'f str> {
     span: &'s Span,
     code: &'c str,
+    filename: F,
 }
 
-impl fmt::Display for DisplaySpan<'_, '_> {
+impl<'f, F: Fn(FileId) -> &'f str> fmt::Display for DisplaySpan<'_, '_, 'f, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut line = String::new();
         let mut line_number = 1;
@@ -91,7 +106,13 @@ impl fmt::Display for DisplaySpan<'_, '_> {
                 _ => unreachable!(),
             }
         }
-        writeln!(f, "  --> <input>:{}:{}", line_number, begin_col)?;
+        writeln!(
+            f,
+            "  --> {}:{}:{}",
+            (self.filename)(self.span.file),
+            line_number,
+            begin_col
+        )?;
         writeln!(f, "   |")?;
         writeln!(f, "{: >2} | {}", line_number, line)?;
 
