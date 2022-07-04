@@ -16,6 +16,7 @@ fn print() {
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let file = parser.file().unwrap();
     let func = compile_file(&file);
+
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     assert_eq!(func.blocks.len(), 1);

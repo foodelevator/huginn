@@ -40,8 +40,11 @@ fn main_sig() -> cl::Signature {
 }
 
 pub fn run_jit(bytecode_func: &Function) -> i64 {
-    let mut jit_mod =
-        cl::JITModule::new(cl::JITBuilder::new(cranelift_module::default_libcall_names()).unwrap());
+    let mut builder = cl::JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
+
+    builder.symbol("print", super::jit::print as *const u8);
+
+    let mut jit_mod = cl::JITModule::new(builder);
 
     let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), main_sig());
 
@@ -64,9 +67,9 @@ pub fn run_jit(bytecode_func: &Function) -> i64 {
 
     let func_ptr = jit_mod.get_finalized_function(main_id);
 
-    // SAFETY: Not sure about calling conventions here but at least the rest of the signature is
-    // correct, and so far the language can't do anything unsafe :^)
-    let callable: fn() -> i64 = unsafe { mem::transmute(func_ptr) };
+    // SAFETY: The calling convention & signature are correct,
+    // and so far the language can't do anything unsafe :^)
+    let callable: extern "C" fn() -> i64 = unsafe { mem::transmute(func_ptr) };
 
     let result = callable();
 
