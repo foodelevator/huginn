@@ -9,7 +9,7 @@ mod basic_stuff;
 
 #[test]
 fn print() {
-    let src = include_str!("print");
+    let src = include_str!("print.y");
 
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut d1).peekable();
