@@ -125,7 +125,7 @@ impl Compiler {
     fn lval(&mut self, expr: &Expr) -> Value {
         match expr {
             Expr::Grouping(Grouping { expr, .. }) => self.lval(expr),
-            Expr::Int(_, _) | Expr::BinaryOperation(_) | Expr::If(_) | Expr::UnaryOperation(_) => {
+            Expr::Int(_, _) | Expr::BinaryOperation(_) | Expr::If(_) | Expr::UnaryOperation(_) | Expr::Proc(_) => {
                 // TODO: fix error reporting
                 panic!("Expression {:?} is not an lvalue", expr)
             }
@@ -146,6 +146,7 @@ impl Compiler {
                 let src = *self.scope.get(&ident.name).expect("Unknown symbol");
                 self.emit(Instr::Mov { dest, src })
             }
+            Expr::Proc(_) => panic!("Cannot yet define procedure in this context"),
         }
     }
 

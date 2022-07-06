@@ -7,7 +7,7 @@ use crate::{
     compilation::{compile_expr, compile_file},
     lexing::Lexer,
     parsing::Parser,
-    syntax_tree::{BinaryOperation, Expr, Grouping, Stmt, VarDecl},
+    syntax_tree::{BinaryOperation, Expr, Grouping, Proc, Stmt, VarDecl},
     tokens::TokenKind,
 };
 
@@ -295,5 +295,35 @@ fn parse_block() {
             }),
             _,
         ) if name1 == "a" && name2 == "a",
+    );
+}
+
+#[test]
+fn parse_proc() {
+    let code = "
+        add := proc(a, b) {
+            return a + b;
+        };
+    ";
+    let (mut d1, mut d2) = (vec![], vec![]);
+    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
+    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let file = parser.file();
+    assert!(d1.is_empty(), "{:?}", d1);
+    assert!(d2.is_empty(), "{:?}", d2);
+    let file = file.unwrap();
+    assert_eq!(file.stmts.len(), 1);
+    assert_matches!(
+        &file.stmts[0],
+        Stmt::VarDecl(VarDecl {
+            ident: Ident { name, .. },
+            value: Expr::Proc(Proc { params, .. }),
+            ..
+        })
+        if name == "add" && matches!(
+            &params[..],
+            [Ident { name: a, .. }, Ident { name: b, .. }]
+            if a == "a" && b == "b"
+        ),
     );
 }

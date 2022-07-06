@@ -68,6 +68,7 @@ pub enum Expr {
     UnaryOperation(Box<UnaryOperation>),
     If(Box<IfExpr>),
     Ident(Ident),
+    Proc(Proc),
 }
 
 #[derive(Debug, Clone)]
@@ -75,16 +76,6 @@ pub struct Grouping {
     pub left_paren: Span,
     pub expr: Box<Expr>,
     pub right_paren: Span,
-}
-
-#[derive(Debug, Clone)]
-pub struct IfExpr {
-    pub if_span: Span,
-    pub cond: Expr,
-    pub then_span: Span,
-    pub then: Expr,
-    pub else_span: Span,
-    pub else_: Expr,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +93,23 @@ pub struct UnaryOperation {
     pub operator: UnaryOperator,
 }
 
+#[derive(Debug, Clone)]
+pub struct IfExpr {
+    pub if_span: Span,
+    pub cond: Expr,
+    pub then_span: Span,
+    pub then: Expr,
+    pub else_span: Span,
+    pub else_: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub struct Proc {
+    pub proc_span: Span,
+    pub params: Vec<Ident>,
+    pub body: Block,
+}
+
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
@@ -117,6 +125,7 @@ impl Expr {
             }) => *op_span | operand.span(),
             Self::If(box IfExpr { if_span, else_, .. }) => *if_span | else_.span(),
             &Self::Ident(Ident { span, .. }) => span,
+            Self::Proc(Proc { proc_span, body, .. }) => *proc_span | body.right_curly,
         }
     }
 }

@@ -51,6 +51,7 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
             ')' => TokenKind::RightParen,
             '{' => TokenKind::LeftCurly,
             '}' => TokenKind::RightCurly,
+            ',' => TokenKind::Comma,
             '=' if self.next_if_eq('=').is_some() => TokenKind::EqualEqual,
             '=' => TokenKind::Equal,
             '!' if self.next_if_eq('=').is_some() => TokenKind::BangEqual,
@@ -102,6 +103,7 @@ impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
             "else" => TokenKind::Else,
             "print" => TokenKind::Print,
             "return" => TokenKind::Return,
+            "proc" => TokenKind::Proc,
 
             _ => TokenKind::Ident(word),
         }

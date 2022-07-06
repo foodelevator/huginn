@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
     syntax_tree::{
-        Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Stmt,
+        Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Proc, Stmt,
         UnaryOperation, VarDecl, While,
     },
     tokens::{Token, TokenKind},
@@ -270,6 +270,10 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
                 span,
                 kind: TokenKind::Ident(name),
             }) => Some(Expr::Ident(Ident { span, name })),
+            Some(Token {
+                span,
+                kind: TokenKind::Proc,
+            }) => self.finish_proc(span),
             token => {
                 self.unexpected_token(token.as_ref());
                 None
@@ -301,6 +305,44 @@ impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
             left_paren,
             expr,
             right_paren,
+        }))
+    }
+
+    fn finish_proc(&mut self, proc_span: Span) -> Option<Expr> {
+        assert_next!(self, TokenKind::LeftParen)?;
+        let mut params = vec![];
+        let mut expect_ident = true;
+        loop {
+            match self.input.next() {
+                Some(Token {
+                    span,
+                    kind: TokenKind::Ident(name),
+                }) if expect_ident => {
+                    params.push(Ident { span, name });
+                    expect_ident = false;
+                }
+                Some(Token {
+                    kind: TokenKind::Comma,
+                    ..
+                }) if !expect_ident => {
+                    expect_ident = true;
+                }
+                Some(Token {
+                    kind: TokenKind::RightParen,
+                    ..
+                }) => break,
+                token => {
+                    self.unexpected_token(token.as_ref());
+                    return None;
+                }
+            }
+        }
+        let body = self.block()?;
+
+        Some(Expr::Proc(Proc {
+            proc_span,
+            params,
+            body,
         }))
     }
 

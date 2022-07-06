@@ -15,6 +15,7 @@ pub enum TokenKind {
     Bang,
     Equal,
     Semicolon,
+    Comma,
 
     LeftParen,
     RightParen,
@@ -35,6 +36,7 @@ pub enum TokenKind {
     While,
     Return,
     Print,
+    Proc,
 
     Ident(String),
     Int(i64),
