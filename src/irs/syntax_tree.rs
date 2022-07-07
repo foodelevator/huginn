@@ -119,11 +119,9 @@ impl Expr {
                 ..
             }) => left_paren | right_paren,
             &Self::Int(span, _) => span,
-            Self::BinaryOperation(box BinaryOperation { lhs, rhs, .. }) => lhs.span() | rhs.span(),
-            Self::UnaryOperation(box UnaryOperation {
-                op_span, operand, ..
-            }) => *op_span | operand.span(),
-            Self::If(box IfExpr { if_span, else_, .. }) => *if_span | else_.span(),
+            Self::BinaryOperation(binop) => binop.lhs.span() | binop.rhs.span(),
+            Self::UnaryOperation(unop) => unop.op_span | unop.operand.span(),
+            Self::If(if_) => if_.if_span | if_.else_.span(),
             &Self::Ident(Ident { span, .. }) => span,
             Self::Proc(Proc {
                 proc_span, body, ..

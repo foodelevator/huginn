@@ -1,4 +1,4 @@
-#![feature(box_patterns, assert_matches)]
+#![cfg_attr(test, feature(box_patterns, assert_matches))]
 
 mod diagnostic;
 mod irs;
