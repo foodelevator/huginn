@@ -4,13 +4,13 @@ use std::io::{BufRead, Read};
 use std::ops::ControlFlow;
 use std::{collections::HashMap, env, fs, process};
 
-use yeet::common::Ident;
-use yeet::compilation::{compile_expr, compile_file, compile_stmt};
-use yeet::lexing::Lexer;
-use yeet::link::link;
-use yeet::parsing::Parser;
-use yeet::syntax_tree::{Assign, Expr, ExprStmt, Stmt, VarDecl};
-use yeet::{codegen, Diagnostic};
+use huginn::common::Ident;
+use huginn::compilation::{compile_expr, compile_file, compile_stmt};
+use huginn::lexing::Lexer;
+use huginn::link::link;
+use huginn::parsing::Parser;
+use huginn::syntax_tree::{Assign, Expr, ExprStmt, Stmt, VarDecl};
+use huginn::{codegen, Diagnostic};
 
 fn main() {
     let args = env::args();
