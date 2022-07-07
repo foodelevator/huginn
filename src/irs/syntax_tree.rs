@@ -125,7 +125,9 @@ impl Expr {
             }) => *op_span | operand.span(),
             Self::If(box IfExpr { if_span, else_, .. }) => *if_span | else_.span(),
             &Self::Ident(Ident { span, .. }) => span,
-            Self::Proc(Proc { proc_span, body, .. }) => *proc_span | body.right_curly,
+            Self::Proc(Proc {
+                proc_span, body, ..
+            }) => *proc_span | body.right_curly,
         }
     }
 }

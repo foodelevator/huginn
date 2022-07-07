@@ -4,8 +4,8 @@ use crate::{
     bytecode::Instr,
     codegen,
     common::{BinaryOperator, Ident},
-    compilation::{compile_expr, compile_file},
     lexing::Lexer,
+    lowering::{lower_expr, lower_file},
     parsing::Parser,
     syntax_tree::{BinaryOperation, Expr, Grouping, Proc, Stmt, VarDecl},
     tokens::TokenKind,
@@ -153,12 +153,12 @@ fn parse_basic_arithmetic() {
 }
 
 #[test]
-fn compile_basic_arithmetic() {
+fn lower_basic_arithmetic() {
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let expr = parser.expr().unwrap();
-    let func = compile_expr(&expr, &HashMap::new());
+    let func = lower_expr(&expr, &HashMap::new());
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     assert_eq!(func.blocks.len(), 1);
@@ -220,7 +220,7 @@ fn run_expr(code: &'static str) -> i64 {
     let expr = parser.expr().unwrap();
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    let func = compile_expr(&expr, &HashMap::new());
+    let func = lower_expr(&expr, &HashMap::new());
     codegen::run_jit(&func)
 }
 
@@ -255,7 +255,7 @@ fn variable_shadowing() {
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     let file = block.unwrap();
-    let func = compile_file(&file);
+    let func = lower_file(&file);
     assert_eq!(4, codegen::run_jit(&func))
 }
 

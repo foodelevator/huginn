@@ -1,21 +1,20 @@
 use std::assert_matches::assert_matches;
 
 use crate::{
-    bytecode::Instr, common::UnaryOperator, compilation::compile_file, lexing::Lexer,
-    parsing::Parser,
+    bytecode::Instr, common::UnaryOperator, lexing::Lexer, lowering::lower_file, parsing::Parser,
 };
 
 mod basic_stuff;
 
 #[test]
 fn print() {
-    let src = include_str!("print.y");
+    let src = include_str!("print.hg");
 
     let (mut d1, mut d2) = (vec![], vec![]);
     let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let file = parser.file().unwrap();
-    let func = compile_file(&file);
+    let func = lower_file(&file);
 
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);

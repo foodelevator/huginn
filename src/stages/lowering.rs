@@ -8,67 +8,61 @@ use crate::{
     },
 };
 
-pub fn compile_file(file: &File) -> Function {
-    let mut compiler = Compiler::new();
+pub fn lower_file(file: &File) -> Function {
+    let mut ctx = LoweringContext::new();
     for stmt in &file.stmts {
-        compiler.stmt(stmt);
+        ctx.stmt(stmt);
     }
 
     // Since we at the moment always must return a value:
-    let ret = compiler.var();
-    compiler.emit(Instr::Const { dest: ret, val: 0 });
-    compiler.emit(Instr::Return(ret));
+    let ret = ctx.var();
+    ctx.emit(Instr::Const { dest: ret, val: 0 });
+    ctx.emit(Instr::Return(ret));
 
-    Function {
-        blocks: compiler.blocks,
-    }
+    Function { blocks: ctx.blocks }
 }
 
-pub fn compile_stmt(stmt: &Stmt, scope: &HashMap<String, i64>) -> Function {
-    let mut compiler = Compiler::new();
+pub fn lower_stmt(stmt: &Stmt, scope: &HashMap<String, i64>) -> Function {
+    let mut ctx = LoweringContext::new();
     for (name, &val) in scope {
-        let dest = compiler.var();
-        compiler.emit(Instr::Const { dest, val });
-        compiler.scope.insert(name.to_string(), dest);
+        let dest = ctx.var();
+        ctx.emit(Instr::Const { dest, val });
+        ctx.scope.insert(name.to_string(), dest);
     }
-    compiler.stmt(stmt);
+    ctx.stmt(stmt);
 
     // Since we at the moment always must return a value:
-    let ret = compiler.var();
-    compiler.emit(Instr::Const { dest: ret, val: 0 });
-    compiler.emit(Instr::Return(ret));
+    let ret = ctx.var();
+    ctx.emit(Instr::Const { dest: ret, val: 0 });
+    ctx.emit(Instr::Return(ret));
 
-    Function {
-        blocks: compiler.blocks,
-    }
+    Function { blocks: ctx.blocks }
 }
 
-pub fn compile_expr(expr: &Expr, scope: &HashMap<String, i64>) -> Function {
-    let mut compiler = Compiler::new();
+pub fn lower_expr(expr: &Expr, scope: &HashMap<String, i64>) -> Function {
+    let mut ctx = LoweringContext::new();
     for (name, &val) in scope {
-        let dest = compiler.var();
-        compiler.emit(Instr::Const { dest, val });
-        compiler.scope.insert(name.to_string(), dest);
+        let dest = ctx.var();
+        ctx.emit(Instr::Const { dest, val });
+        ctx.scope.insert(name.to_string(), dest);
     }
 
-    let ret = compiler.var();
-    compiler.rval(expr, ret);
-    compiler.emit(Instr::Return(ret));
+    let ret = ctx.var();
+    ctx.rval(expr, ret);
+    ctx.emit(Instr::Return(ret));
 
-    Function {
-        blocks: compiler.blocks,
-    }
+    Function { blocks: ctx.blocks }
 }
 
 #[derive(Debug)]
-struct Compiler {
+struct LoweringContext {
     blocks: Vec<BCBlock>,
     curr_block: BlockId,
     var_counter: Value,
     scope: HashMap<String, Value>,
 }
 
-impl Compiler {
+impl LoweringContext {
     fn new() -> Self {
         let mut this = Self {
             blocks: Vec::new(),
@@ -125,7 +119,11 @@ impl Compiler {
     fn lval(&mut self, expr: &Expr) -> Value {
         match expr {
             Expr::Grouping(Grouping { expr, .. }) => self.lval(expr),
-            Expr::Int(_, _) | Expr::BinaryOperation(_) | Expr::If(_) | Expr::UnaryOperation(_) | Expr::Proc(_) => {
+            Expr::Int(_, _)
+            | Expr::BinaryOperation(_)
+            | Expr::If(_)
+            | Expr::UnaryOperation(_)
+            | Expr::Proc(_) => {
                 // TODO: fix error reporting
                 panic!("Expression {:?} is not an lvalue", expr)
             }

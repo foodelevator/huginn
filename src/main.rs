@@ -5,9 +5,9 @@ use std::ops::ControlFlow;
 use std::{collections::HashMap, env, fs, process};
 
 use huginn::common::Ident;
-use huginn::compilation::{compile_expr, compile_file, compile_stmt};
 use huginn::lexing::Lexer;
 use huginn::link::link;
+use huginn::lowering::{lower_expr, lower_file, lower_stmt};
 use huginn::parsing::Parser;
 use huginn::syntax_tree::{Assign, Expr, ExprStmt, Stmt, VarDecl};
 use huginn::{codegen, Diagnostic};
@@ -100,7 +100,7 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
         return Ok(());
     }
 
-    let func = compile_file(&file);
+    let func = lower_file(&file);
 
     if mode == Mode::Bytecode {
         for (i, block) in func.blocks.iter().enumerate() {
@@ -191,9 +191,9 @@ pub fn run_stmt(
 
     let (func, print_result) = match &stmt {
         Stmt::Expr(ExprStmt { expr, .. }) => {
-            (compile_expr(expr, scope), /*semicolon.is_none()*/ true)
+            (lower_expr(expr, scope), /*semicolon.is_none()*/ true)
         }
-        stmt => (compile_stmt(stmt, scope), false),
+        stmt => (lower_stmt(stmt, scope), false),
     };
 
     if mode == Mode::Bytecode {
