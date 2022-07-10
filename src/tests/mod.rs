@@ -14,13 +14,13 @@ fn print() {
     let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let file = parser.file().unwrap();
-    let func = lower_file(&file);
+    let proc = lower_file(&file);
 
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    assert_eq!(func.blocks.len(), 1);
+    assert_eq!(proc.blocks.len(), 1);
     assert_matches!(
-        &func.blocks[0].instrs[..],
+        &proc.blocks[0].instrs[..],
         &[
             Instr::Const { dest: ten_a_1, val: 10 },
             Instr::Print(ten_a_2),
@@ -64,6 +64,6 @@ fn print() {
             && n_ten_1 == n_ten_2
             && ret_1 == ret_2,
         "{:#?}",
-        &func.blocks[0].instrs[..],
+        &proc.blocks[0].instrs[..],
     );
 }

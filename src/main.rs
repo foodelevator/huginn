@@ -1,15 +1,13 @@
 use std::error::Error;
-use std::io::{stdin, stdout, Write};
-use std::io::{BufRead, Read};
-use std::ops::ControlFlow;
-use std::{collections::HashMap, env, fs, process};
+use std::io::stdin;
+use std::io::Read;
+use std::{env, fs, process};
 
-use huginn::common::Ident;
 use huginn::lexing::Lexer;
 use huginn::link::link;
-use huginn::lowering::{lower_expr, lower_file, lower_stmt};
+use huginn::lowering::lower_file;
 use huginn::parsing::Parser;
-use huginn::syntax_tree::{Assign, Expr, ExprStmt, Stmt, VarDecl};
+use huginn::resolution::resolve;
 use huginn::{codegen, Diagnostic};
 
 fn main() {
@@ -20,6 +18,7 @@ fn main() {
         match &*arg {
             "parse" => mode = Mode::Parse,
             "bytecode" => mode = Mode::Bytecode,
+            "bitcode" => mode = Mode::Bitcode,
             "object" => mode = Mode::Object,
             "build" => mode = Mode::Build,
             "run" => mode = Mode::Run,
@@ -61,6 +60,7 @@ pub enum Mode {
     Object,
     Build,
     Bytecode,
+    Bitcode,
     Run,
 }
 
@@ -100,10 +100,22 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
         return Ok(());
     }
 
-    let func = lower_file(&file);
+    let proc = lower_file(&file);
 
     if mode == Mode::Bytecode {
-        for (i, block) in func.blocks.iter().enumerate() {
+        for (i, block) in proc.blocks.iter().enumerate() {
+            println!("block{}:", i);
+            for instr in &block.instrs {
+                println!("    {:?}", instr);
+            }
+        }
+        return Ok(());
+    }
+
+    let proc = resolve(&proc);
+
+    if mode == Mode::Bitcode {
+        for (i, block) in proc.blocks.iter().enumerate() {
             println!("block{}:", i);
             for instr in &block.instrs {
                 println!("    {:?}", instr);
@@ -113,7 +125,7 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
     }
 
     if mode == Mode::Object || mode == Mode::Build {
-        let obj = codegen::build_object(&func);
+        let obj = codegen::build_object(&proc);
         if mode == Mode::Object {
             fs::write("output.o", obj)?;
         } else {
@@ -123,7 +135,7 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
     }
 
     if mode == Mode::Run {
-        let res = codegen::run_jit(&func);
+        let res = codegen::run_jit(&proc);
         if res != 0 {
             println!("{}", res);
         }
@@ -131,105 +143,4 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
     }
 
     unimplemented!("Someone missed something for mode {:?}", mode)
-}
-
-pub fn repl(mode: Mode) -> Result<(), Box<dyn Error>> {
-    let mut line = String::new();
-    let mut scope = HashMap::new();
-    loop {
-        line.clear();
-        print!("\x1b[34m>\x1b[0m ");
-        stdout().flush()?;
-        stdin().lock().read_line(&mut line)?;
-        if line.is_empty() {
-            println!();
-            break Ok(());
-        }
-
-        match run_stmt(&line, mode, &mut scope)? {
-            ControlFlow::Continue(_) => continue,
-            ControlFlow::Break(_) => break Ok(()),
-        }
-    }
-}
-
-pub fn run_stmt(
-    src: &str,
-    mode: Mode,
-    scope: &mut HashMap<String, i64>,
-) -> Result<ControlFlow<()>, Box<dyn Error>> {
-    let mut lexer_diagnostics = Vec::new();
-    let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut lexer_diagnostics).peekable();
-
-    let mut parsing_diagnostics = Vec::new();
-    let stmt = Parser::new(&mut lexer, &mut parsing_diagnostics).stmt();
-    if let Some(span) = lexer.peek().map(|t| t.span) {
-        if parsing_diagnostics.is_empty() {
-            lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
-        }
-    }
-
-    lexer_diagnostics.append(&mut parsing_diagnostics);
-    let diagnostics = lexer_diagnostics;
-
-    if !diagnostics.is_empty() {
-        for d in diagnostics {
-            eprintln!("{}", d.display(src, |_| "<stdin>"));
-        }
-    }
-
-    let stmt = if let Some(stmt) = stmt {
-        stmt
-    } else {
-        return Ok(ControlFlow::Continue(()));
-    };
-
-    if mode == Mode::Parse {
-        println!("{:#?}", stmt);
-        return Ok(ControlFlow::Continue(()));
-    }
-
-    let (func, print_result) = match &stmt {
-        Stmt::Expr(ExprStmt { expr, .. }) => {
-            (lower_expr(expr, scope), /*semicolon.is_none()*/ true)
-        }
-        stmt => (lower_stmt(stmt, scope), false),
-    };
-
-    if mode == Mode::Bytecode {
-        for (i, block) in func.blocks.iter().enumerate() {
-            println!("block{}:", i);
-            for instr in &block.instrs {
-                println!("    {:?}", instr);
-            }
-        }
-        return Ok(ControlFlow::Continue(()));
-    }
-
-    if mode == Mode::Build {
-        let obj = codegen::build_object(&func);
-        fs::write("output.o", obj)?;
-        return Ok(ControlFlow::Break(()));
-    }
-
-    if mode == Mode::Run {
-        let res = codegen::run_jit(&func);
-        if let Stmt::Assign(Assign {
-            assignee: Expr::Ident(Ident { name, .. }),
-            ..
-        })
-        | Stmt::VarDecl(VarDecl {
-            ident: Ident { name, .. },
-            ..
-        }) = stmt
-        {
-            scope.insert(name, res);
-        }
-        if print_result {
-            println!("{}", res);
-        }
-        return Ok(ControlFlow::Continue(()));
-    }
-
-    unimplemented!("Unimplemented mode {:?}", mode)
 }

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, mem};
+use std::{collections::HashMap, mem};
 
 mod cl {
     pub use cranelift::{
@@ -19,7 +19,7 @@ use cranelift::codegen::ir::InstBuilder as _;
 use cranelift_module::Module as _;
 
 use crate::{
-    bytecode::{Block, Function, Instr},
+    bitcode::{Block, Instr, Procedure, Value},
     common::{BinaryOperator, UnaryOperator},
 };
 
@@ -39,7 +39,7 @@ fn main_sig() -> cl::Signature {
     }
 }
 
-pub fn run_jit(bytecode_func: &Function) -> i64 {
+pub fn run_jit(bitcode_func: &Procedure) -> i64 {
     let mut builder = cl::JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
 
     builder.symbol("print", super::jit::print as *const u8);
@@ -57,7 +57,7 @@ pub fn run_jit(bytecode_func: &Function) -> i64 {
 
     let print_ref = jit_mod.declare_func_in_func(print_id, &mut main_func);
 
-    let codegen_context = CodegenContext::new(bytecode_func, print_ref);
+    let codegen_context = CodegenContext::new(bitcode_func, print_ref);
     codegen_context.gen_func(&mut main_func);
 
     let mut ctx = cl::Context::for_function(main_func);
@@ -79,7 +79,7 @@ pub fn run_jit(bytecode_func: &Function) -> i64 {
     result
 }
 
-pub fn build_object(bytecode_func: &Function) -> Vec<u8> {
+pub fn build_object(bitcode_func: &Procedure) -> Vec<u8> {
     let target_isa = cl::isa::lookup_by_name("x86_64-linux")
         .unwrap()
         .finish(cl::settings::Flags::new(cl::settings::builder()))
@@ -105,7 +105,7 @@ pub fn build_object(bytecode_func: &Function) -> Vec<u8> {
 
     let print_ref = obj_mod.declare_func_in_func(print_id, &mut main_func);
 
-    let codegen_context = CodegenContext::new(bytecode_func, print_ref);
+    let codegen_context = CodegenContext::new(bitcode_func, print_ref);
     codegen_context.gen_func(&mut main_func);
 
     let mut ctx = cl::Context::for_function(main_func);
@@ -118,15 +118,17 @@ pub fn build_object(bytecode_func: &Function) -> Vec<u8> {
 
 struct CodegenContext<'f> {
     blocks: Vec<cl::Block>,
-    func: &'f Function,
+    proc: &'f Procedure,
+    values: HashMap<u32, cl::Value>,
     print_func: cl::FuncRef,
 }
 
 impl<'f> CodegenContext<'f> {
-    pub fn new(func: &'f Function, print_func: cl::FuncRef) -> Self {
+    pub fn new(proc: &'f Procedure, print_func: cl::FuncRef) -> Self {
         Self {
             blocks: Vec::new(),
-            func,
+            proc,
+            values: HashMap::new(),
             print_func,
         }
     }
@@ -135,13 +137,13 @@ impl<'f> CodegenContext<'f> {
         let mut fb_ctx = cl::FunctionBuilderContext::new();
         let mut b = cl::FunctionBuilder::new(func, &mut fb_ctx);
 
-        self.declare_all_vars(&mut b);
+        self.declare_vars(&mut b);
 
-        for _ in &self.func.blocks {
+        for _ in &self.proc.blocks {
             self.blocks.push(b.create_block());
         }
 
-        for (i, block) in self.func.blocks.iter().enumerate() {
+        for (i, block) in self.proc.blocks.iter().enumerate() {
             b.switch_to_block(self.blocks[i]);
             self.gen_block(&mut b, block);
         }
@@ -152,29 +154,15 @@ impl<'f> CodegenContext<'f> {
 
         let flags = cl::settings::Flags::new(cl::settings::builder());
         if let Err(err) = cranelift::codegen::verify_function(func, &flags) {
-            panic!("codegen verify: {}", err);
+            panic!("compiler bug: codegen verify: {}", err);
         }
     }
 
-    fn declare_all_vars(&mut self, b: &mut cl::FunctionBuilder) {
-        let mut vars = HashSet::new();
-        for block in &self.func.blocks {
-            for instr in &block.instrs {
-                let var = match *instr {
-                    Instr::Const { dest, .. } => dest,
-                    Instr::BinaryOperation { dest, .. } => dest,
-                    Instr::UnaryOperation { dest, .. } => dest,
-                    Instr::Mov { dest, .. } => dest,
-                    Instr::Jump(_) => continue,
-                    Instr::JumpIf { .. } => continue,
-                    Instr::Print(dest) => dest,
-                    Instr::Return(val) => val,
-                };
-                vars.insert(var);
+    fn declare_vars(&mut self, b: &mut cl::FunctionBuilder) {
+        for value in self.proc.values.keys() {
+            if let Ok(var) = self.get_var(*value) {
+                b.declare_var(var, cl::I64);
             }
-        }
-        for var in vars {
-            b.declare_var(cl::Variable::with_u32(var), cl::I64);
         }
     }
 
@@ -190,8 +178,8 @@ impl<'f> CodegenContext<'f> {
     fn gen_instr(&mut self, b: &mut cl::FunctionBuilder, instr: &Instr) {
         match *instr {
             Instr::Const { dest, val } => {
-                let res = b.ins().iconst(cl::I64, val);
-                b.def_var(cl::Variable::with_u32(dest), res);
+                let val = b.ins().iconst(cl::I64, val);
+                self.set_value(b, dest, val);
             }
             Instr::BinaryOperation {
                 dest,
@@ -199,40 +187,44 @@ impl<'f> CodegenContext<'f> {
                 rhs,
                 operator,
             } => {
-                let lhs = b.use_var(cl::Variable::with_u32(lhs));
-                let rhs = b.use_var(cl::Variable::with_u32(rhs));
+                let lhs = self.get_value(b, lhs);
+                let rhs = self.get_value(b, rhs);
                 let res = self.gen_bin_op(b, operator, lhs, rhs);
-                b.def_var(cl::Variable::with_u32(dest), res);
+                self.set_value(b, dest, res);
             }
             Instr::UnaryOperation {
                 dest,
                 operand,
                 operator,
             } => {
-                let operand = b.use_var(cl::Variable::with_u32(operand));
+                let operand = self.get_value(b, operand);
                 let res = self.gen_unary_op(b, operator, operand);
-                b.def_var(cl::Variable::with_u32(dest), res);
-            }
-            Instr::Mov { dest, src } => {
-                let val = b.use_var(cl::Variable::with_u32(src));
-                b.def_var(cl::Variable::with_u32(dest), val);
+                self.set_value(b, dest, res);
             }
             Instr::Jump(block_id) => {
                 let dest = self.blocks[block_id as usize];
                 b.ins().jump(dest, &[]);
             }
-            Instr::JumpIf { cond, block_id } => {
-                let cond = b.use_var(cl::Variable::with_u32(cond));
-                let dest = self.blocks[block_id as usize];
-                b.ins().brnz(cond, dest, &[]);
+            Instr::Branch {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                let cond = self.get_value(b, cond);
+                b.ins().brnz(cond, self.blocks[then_block as usize], &[]);
+                b.ins().jump(self.blocks[else_block as usize], &[]);
             }
             Instr::Print(val) => {
-                let val = b.use_var(cl::Variable::with_u32(val));
+                let val = self.get_value(b, val);
                 b.ins().call(self.print_func, &[val]);
             }
             Instr::Return(val) => {
-                let val = b.use_var(cl::Variable::with_u32(val));
+                let val = self.get_value(b, val);
                 b.ins().return_(&[val]);
+            }
+            Instr::Mov { dest, src } => {
+                let res = self.get_value(b, src);
+                self.set_value(b, dest, res);
             }
         }
     }
@@ -288,6 +280,36 @@ impl<'f> CodegenContext<'f> {
                 b.ins().bint(cl::I64, c)
             }
             UnaryOperator::Negate => b.ins().ineg(operand),
+        }
+    }
+
+    fn get_value(&self, b: &mut cl::FunctionBuilder, value: Value) -> cl::Value {
+        match self.get_var(value) {
+            Ok(var) => b.use_var(var),
+            Err(value) => self.values[&value],
+        }
+    }
+
+    fn set_value(&mut self, b: &mut cl::FunctionBuilder, dest: Value, src: cl::Value) {
+        match self.get_var(dest) {
+            Ok(var) => {
+                b.def_var(var, src);
+            }
+            Err(dest) => {
+                self.values.insert(dest, src);
+            }
+        }
+    }
+
+    fn get_var(&self, value: Value) -> Result<cl::Variable, u32> {
+        let info = self.proc.values.get(&value).copied().unwrap_or_default();
+        match value {
+            Value::Local(index) => Ok(cl::Variable::with_u32(index)),
+            // TODO: this works for now, but maybe there is a better solution
+            Value::Temp(index) if info.writes > 1 => {
+                Ok(cl::Variable::with_u32(index + self.proc.local_count))
+            }
+            Value::Temp(index) => Err(index),
         }
     }
 }

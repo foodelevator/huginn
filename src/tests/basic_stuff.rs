@@ -1,4 +1,4 @@
-use std::{assert_matches::assert_matches, collections::HashMap};
+use std::assert_matches::assert_matches;
 
 use crate::{
     bytecode::Instr,
@@ -6,6 +6,7 @@ use crate::{
     common::{BinaryOperator, Ident},
     lexing::Lexer,
     lowering::{lower_expr, lower_file},
+    resolution::resolve,
     parsing::Parser,
     syntax_tree::{BinaryOperation, Expr, Grouping, Proc, Stmt, VarDecl},
     tokens::TokenKind,
@@ -158,12 +159,12 @@ fn lower_basic_arithmetic() {
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0, &mut d1).peekable();
     let mut parser = Parser::new(&mut lexer, &mut d2);
     let expr = parser.expr().unwrap();
-    let func = lower_expr(&expr, &HashMap::new());
+    let proc = lower_expr(&expr);
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    assert_eq!(func.blocks.len(), 1);
+    assert_eq!(proc.blocks.len(), 1);
     assert_matches!(
-        &func.blocks[0].instrs[..],
+        &proc.blocks[0].instrs[..],
         &[
             Instr::Const { val: 1, dest: one_a },
             Instr::Const { val: 2, dest: two_a },
@@ -209,7 +210,7 @@ fn lower_basic_arithmetic() {
              prod_3_a == prod_3_b &&
              prod_4_a == prod_4_b,
         "{:#?}",
-        &func.blocks[0].instrs[..],
+        &proc.blocks[0].instrs[..],
     );
 }
 
@@ -220,8 +221,9 @@ fn run_expr(code: &'static str) -> i64 {
     let expr = parser.expr().unwrap();
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
-    let func = lower_expr(&expr, &HashMap::new());
-    codegen::run_jit(&func)
+    let proc = lower_expr(&expr);
+    let proc = resolve(&proc);
+    codegen::run_jit(&proc)
 }
 
 #[test]
@@ -255,8 +257,9 @@ fn variable_shadowing() {
     assert!(d1.is_empty(), "{:?}", d1);
     assert!(d2.is_empty(), "{:?}", d2);
     let file = block.unwrap();
-    let func = lower_file(&file);
-    assert_eq!(4, codegen::run_jit(&func))
+    let proc = lower_file(&file);
+    let proc = resolve(&proc);
+    assert_eq!(4, codegen::run_jit(&proc))
 }
 
 #[test]

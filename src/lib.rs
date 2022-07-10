@@ -5,8 +5,8 @@ mod irs;
 mod stages;
 
 pub use diagnostic::Diagnostic;
-pub use irs::{bytecode, common, syntax_tree, tokens};
-pub use stages::{codegen, lexing, link, lowering, parsing};
+pub use irs::{bitcode, bytecode, common, syntax_tree, tokens};
+pub use stages::{codegen, lexing, link, lowering, parsing, resolution};
 
 #[cfg(test)]
 mod tests;

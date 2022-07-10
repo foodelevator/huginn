@@ -1,14 +1,13 @@
-use std::collections::HashMap;
-
 use crate::{
-    bytecode::{Block as BCBlock, BlockId, Function, Instr, Value},
+    bytecode::{Block as BCBlock, BlockId, Procedure, Instr, Value},
+    common::Ident,
     syntax_tree::{
         Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Stmt,
         UnaryOperation, VarDecl, While,
     },
 };
 
-pub fn lower_file(file: &File) -> Function {
+pub fn lower_file(file: &File) -> Procedure {
     let mut ctx = LoweringContext::new();
     for stmt in &file.stmts {
         ctx.stmt(stmt);
@@ -19,16 +18,13 @@ pub fn lower_file(file: &File) -> Function {
     ctx.emit(Instr::Const { dest: ret, val: 0 });
     ctx.emit(Instr::Return(ret));
 
-    Function { blocks: ctx.blocks }
+    Procedure {
+        blocks: ctx.blocks,
+    }
 }
 
-pub fn lower_stmt(stmt: &Stmt, scope: &HashMap<String, i64>) -> Function {
+pub fn lower_stmt(stmt: &Stmt) -> Procedure {
     let mut ctx = LoweringContext::new();
-    for (name, &val) in scope {
-        let dest = ctx.var();
-        ctx.emit(Instr::Const { dest, val });
-        ctx.scope.insert(name.to_string(), dest);
-    }
     ctx.stmt(stmt);
 
     // Since we at the moment always must return a value:
@@ -36,22 +32,20 @@ pub fn lower_stmt(stmt: &Stmt, scope: &HashMap<String, i64>) -> Function {
     ctx.emit(Instr::Const { dest: ret, val: 0 });
     ctx.emit(Instr::Return(ret));
 
-    Function { blocks: ctx.blocks }
+    Procedure {
+        blocks: ctx.blocks,
+    }
 }
 
-pub fn lower_expr(expr: &Expr, scope: &HashMap<String, i64>) -> Function {
+pub fn lower_expr(expr: &Expr) -> Procedure {
     let mut ctx = LoweringContext::new();
-    for (name, &val) in scope {
-        let dest = ctx.var();
-        ctx.emit(Instr::Const { dest, val });
-        ctx.scope.insert(name.to_string(), dest);
-    }
-
     let ret = ctx.var();
     ctx.rval(expr, ret);
     ctx.emit(Instr::Return(ret));
 
-    Function { blocks: ctx.blocks }
+    Procedure {
+        blocks: ctx.blocks,
+    }
 }
 
 #[derive(Debug)]
@@ -59,7 +53,6 @@ struct LoweringContext {
     blocks: Vec<BCBlock>,
     curr_block: BlockId,
     var_counter: Value,
-    scope: HashMap<String, Value>,
 }
 
 impl LoweringContext {
@@ -68,7 +61,6 @@ impl LoweringContext {
             blocks: Vec::new(),
             curr_block: 0,
             var_counter: 0,
-            scope: HashMap::new(),
         };
         this.create_block();
         this
@@ -87,15 +79,21 @@ impl LoweringContext {
                 self.rval(expr, dest);
             }
             Stmt::VarDecl(VarDecl { ident, value, .. }) => {
-                let dest = self.var();
-                self.rval(value, dest);
-                self.scope.insert(ident.name.clone(), dest);
+                let src = self.var();
+                self.rval(value, src);
+
+                self.emit(Instr::DefLocal { name: ident.name.clone() });
+                self.emit(Instr::SymAssign {
+                    name: ident.name.clone(),
+                    src,
+                });
             }
             Stmt::Assign(Assign {
                 assignee, value, ..
             }) => {
-                let dest = self.lval(assignee);
-                self.rval(value, dest);
+                let src = self.var();
+                self.rval(value, src);
+                self.assign(assignee, src);
             }
             Stmt::If(if_) => {
                 self.if_stmt(if_);
@@ -116,18 +114,18 @@ impl LoweringContext {
         }
     }
 
-    fn lval(&mut self, expr: &Expr) -> Value {
-        match expr {
-            Expr::Grouping(Grouping { expr, .. }) => self.lval(expr),
-            Expr::Int(_, _)
+    fn assign(&mut self, assignee: &Expr, src: Value) {
+        match assignee {
+            Expr::Grouping(_)
+            | Expr::Int(_, _)
             | Expr::BinaryOperation(_)
-            | Expr::If(_)
             | Expr::UnaryOperation(_)
-            | Expr::Proc(_) => {
-                // TODO: fix error reporting
-                panic!("Expression {:?} is not an lvalue", expr)
+            | Expr::If(_)
+            | Expr::Proc(_) => panic!(),
+            Expr::Ident(Ident { name, .. }) => {
+                let name = name.clone();
+                self.emit(Instr::SymAssign { name, src });
             }
-            Expr::Ident(ident) => *self.scope.get(&ident.name).expect("Unkown symbol"),
         }
     }
 
@@ -140,10 +138,10 @@ impl LoweringContext {
             Expr::BinaryOperation(bin_op) => self.bin_op(bin_op, dest),
             Expr::UnaryOperation(bin_op) => self.unary_op(bin_op, dest),
             Expr::If(if_) => self.if_expr(if_, dest),
-            Expr::Ident(ident) => {
-                let src = *self.scope.get(&ident.name).expect("Unknown symbol");
-                self.emit(Instr::Mov { dest, src })
-            }
+            Expr::Ident(Ident { name, .. }) => self.emit(Instr::SymbolVal {
+                dest,
+                name: name.clone(),
+            }),
             Expr::Proc(_) => panic!("Cannot yet define procedure in this context"),
         }
     }
@@ -178,11 +176,11 @@ impl LoweringContext {
         let then = self.create_block();
         let else_ = self.create_block();
         let done = self.create_block();
-        self.emit(Instr::JumpIf {
+        self.emit(Instr::Branch {
             cond,
-            block_id: then,
+            then_block: then,
+            else_block: else_,
         });
-        self.emit(Instr::Jump(else_));
 
         self.switch_to_block(then);
         self.block(&if_.then);
@@ -207,11 +205,11 @@ impl LoweringContext {
 
         let cond = self.var();
         self.rval(&while_.cond, cond);
-        self.emit(Instr::JumpIf {
+        self.emit(Instr::Branch {
             cond,
-            block_id: body,
+            then_block: body,
+            else_block: done,
         });
-        self.emit(Instr::Jump(done));
 
         self.switch_to_block(body);
 
@@ -227,11 +225,11 @@ impl LoweringContext {
         let then = self.create_block();
         let else_ = self.create_block();
         let done = self.create_block();
-        self.emit(Instr::JumpIf {
+        self.emit(Instr::Branch {
             cond,
-            block_id: then,
+            then_block: then,
+            else_block: else_,
         });
-        self.emit(Instr::Jump(else_));
 
         self.switch_to_block(then);
         self.rval(&if_.then, dest);
