@@ -1,9 +1,13 @@
-use crate::common::{BinaryOperator, UnaryOperator};
+use std::collections::HashMap;
+
+use crate::{common::{BinaryOperator, UnaryOperator}, Array};
 
 #[derive(Debug, Default)]
 pub struct Procedure {
-    pub blocks: Vec<Block>,
+    pub blocks: Array<BlockId, Block>,
 }
+
+pub type BlockId = u32;
 
 #[derive(Debug, Default)]
 pub struct Block {
@@ -48,5 +52,4 @@ pub enum Instr {
     Return(Value),
 }
 
-pub type BlockId = u32;
 pub type Value = u32;

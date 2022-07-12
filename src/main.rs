@@ -69,22 +69,31 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
     input.read_to_string(&mut src)?;
     let src = src;
 
-    let mut lexer_diagnostics = Vec::new();
-    let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut lexer_diagnostics).peekable();
+    let mut lexer = Lexer::new(src.chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
+    let file = parser.file();
 
-    let mut parsing_diagnostics = Vec::new();
-    let file = Parser::new(&mut lexer, &mut parsing_diagnostics).file();
+    let got_parsing_errors = if !parser.diagnostics().is_empty() {
+        for d in parser.diagnostics() {
+            eprintln!("{}", d.display(&src, |_| filename));
+        }
+        true
+    } else {
+        false
+    };
+
     if let Some(span) = lexer.peek().map(|t| t.span) {
-        if parsing_diagnostics.is_empty() {
-            lexer_diagnostics.push(Diagnostic::warning(span, "Unexpected token, expected EOF"))
+        if !got_parsing_errors {
+            eprintln!(
+                "{}",
+                Diagnostic::warning(span, "Unexpected token, expected EOF")
+                    .display(&src, |_| filename)
+            );
         }
     }
 
-    lexer_diagnostics.append(&mut parsing_diagnostics);
-    let diagnostics = lexer_diagnostics;
-
-    if !diagnostics.is_empty() {
-        for d in diagnostics {
+    if !lexer.diagnostics().is_empty() {
+        for d in lexer.diagnostics() {
             eprintln!("{}", d.display(&src, |_| filename));
         }
     }

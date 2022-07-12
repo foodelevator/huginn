@@ -10,14 +10,17 @@ mod basic_stuff;
 fn print() {
     let src = include_str!("print.hg");
 
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(src.chars().peekable(), 0, &mut d1).peekable();
-    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let mut lexer = Lexer::new(src.chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
     let file = parser.file().unwrap();
     let proc = lower_file(&file);
 
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(proc.blocks.len(), 1);
     assert_matches!(
         &proc.blocks[0].instrs[..],

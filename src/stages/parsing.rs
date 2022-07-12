@@ -1,5 +1,3 @@
-use std::iter::Peekable;
-
 use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
     syntax_tree::{
@@ -7,12 +5,12 @@ use crate::{
         UnaryOperation, VarDecl, While,
     },
     tokens::{Token, TokenKind},
-    Diagnostic,
+    Diagnostic, lexing::Lexer,
 };
 
-pub struct Parser<'i, 'd, I: Iterator<Item = Token>> {
-    input: &'i mut Peekable<I>,
-    diagnostics: &'d mut Vec<Diagnostic>,
+pub struct Parser<'i, I: Iterator<Item = char>> {
+    input: &'i mut Lexer<I>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 macro_rules! assert_next {
@@ -31,9 +29,13 @@ macro_rules! assert_next {
     };
 }
 
-impl<'i, 'd, I: Iterator<Item = Token>> Parser<'i, 'd, I> {
-    pub fn new(input: &'i mut Peekable<I>, diagnostics: &'d mut Vec<Diagnostic>) -> Self {
-        Self { input, diagnostics }
+impl<'i, I: Iterator<Item = char>> Parser<'i, I> {
+    pub fn new(input: &'i mut Lexer<I>) -> Self {
+        Self { input, diagnostics: Vec::new() }
+    }
+
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        self.diagnostics.as_ref()
     }
 
     pub fn file(&mut self) -> Option<File> {

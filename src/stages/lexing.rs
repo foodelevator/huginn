@@ -6,17 +6,21 @@ use crate::{
     Diagnostic,
 };
 
-pub struct Lexer<'d, I: Iterator<Item = char>> {
+pub struct Lexer<I: Iterator<Item = char>> {
     input: Peekable<I>,
     index: usize,
-    diagnostics: &'d mut Vec<Diagnostic>,
     file: FileId,
+    diagnostics: Vec<Diagnostic>,
+    peeked: Option<Token>,
 }
 
-impl<'d, I: Iterator<Item = char>> Iterator for Lexer<'d, I> {
+impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.peeked.is_some() {
+            return self.peeked.take();
+        }
         loop {
             if let Some(token) = self.advance() {
                 return Some(token);
@@ -26,14 +30,22 @@ impl<'d, I: Iterator<Item = char>> Iterator for Lexer<'d, I> {
     }
 }
 
-impl<'d, I: Iterator<Item = char>> Lexer<'d, I> {
-    pub fn new(input: Peekable<I>, file: FileId, diagnostics: &'d mut Vec<Diagnostic>) -> Self {
+impl<I: Iterator<Item = char>> Lexer<I> {
+    pub fn new(input: Peekable<I>, file: FileId) -> Self {
         Self {
             input,
             index: 0,
-            diagnostics,
             file,
+            diagnostics: Vec::new(),
+            peeked: None,
         }
+    }
+
+    pub fn peek(&mut self) -> Option<&Token> {
+        if self.peeked.is_none() {
+            self.peeked = self.next();
+        }
+        self.peeked.as_ref()
     }
 
     pub fn diagnostics(&self) -> &[Diagnostic] {

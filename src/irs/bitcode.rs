@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
-use crate::common::{BinaryOperator, UnaryOperator};
+use crate::{
+    common::{BinaryOperator, UnaryOperator},
+    Array,
+};
 
 #[derive(Debug, Clone)]
 pub struct Procedure {
-    pub blocks: Vec<Block>,
+    pub blocks: Array<BlockId, Block>,
     pub values: HashMap<Value, ValueInfo>,
     pub local_count: u32,
 }

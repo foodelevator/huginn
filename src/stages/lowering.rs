@@ -4,7 +4,7 @@ use crate::{
     syntax_tree::{
         Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Stmt,
         UnaryOperation, VarDecl, While,
-    },
+    }, Array,
 };
 
 pub fn lower_file(file: &File) -> Procedure {
@@ -50,7 +50,7 @@ pub fn lower_expr(expr: &Expr) -> Procedure {
 
 #[derive(Debug)]
 struct LoweringContext {
-    blocks: Vec<BCBlock>,
+    blocks: Array<BlockId, BCBlock>,
     curr_block: BlockId,
     var_counter: Value,
 }
@@ -58,7 +58,7 @@ struct LoweringContext {
 impl LoweringContext {
     fn new() -> Self {
         let mut this = Self {
-            blocks: Vec::new(),
+            blocks: Array::default(),
             curr_block: 0,
             var_counter: 0,
         };
@@ -243,7 +243,7 @@ impl LoweringContext {
     }
 
     fn emit(&mut self, instr: Instr) {
-        self.blocks[self.curr_block as usize].instrs.push(instr)
+        self.blocks[self.curr_block].instrs.push(instr)
     }
 
     fn switch_to_block(&mut self, id: BlockId) {

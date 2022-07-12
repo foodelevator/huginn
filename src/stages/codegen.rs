@@ -19,8 +19,8 @@ use cranelift::codegen::ir::InstBuilder as _;
 use cranelift_module::Module as _;
 
 use crate::{
-    bitcode::{Block, Instr, Procedure, Value},
-    common::{BinaryOperator, UnaryOperator},
+    bitcode::{Block, Instr, Procedure, Value, BlockId},
+    common::{BinaryOperator, UnaryOperator}, Array,
 };
 
 fn print_sig() -> cl::Signature {
@@ -117,7 +117,7 @@ pub fn build_object(bitcode_func: &Procedure) -> Vec<u8> {
 }
 
 struct CodegenContext<'f> {
-    blocks: Vec<cl::Block>,
+    blocks: Array<BlockId, cl::Block>,
     proc: &'f Procedure,
     values: HashMap<u32, cl::Value>,
     print_func: cl::FuncRef,
@@ -126,7 +126,7 @@ struct CodegenContext<'f> {
 impl<'f> CodegenContext<'f> {
     pub fn new(proc: &'f Procedure, print_func: cl::FuncRef) -> Self {
         Self {
-            blocks: Vec::new(),
+            blocks: Array::default(),
             proc,
             values: HashMap::new(),
             print_func,
@@ -139,11 +139,11 @@ impl<'f> CodegenContext<'f> {
 
         self.declare_vars(&mut b);
 
-        for _ in &self.proc.blocks {
+        for _ in &*self.proc.blocks {
             self.blocks.push(b.create_block());
         }
 
-        for (i, block) in self.proc.blocks.iter().enumerate() {
+        for (i, block) in self.proc.blocks.enumerate() {
             b.switch_to_block(self.blocks[i]);
             self.gen_block(&mut b, block);
         }
@@ -202,7 +202,7 @@ impl<'f> CodegenContext<'f> {
                 self.set_value(b, dest, res);
             }
             Instr::Jump(block_id) => {
-                let dest = self.blocks[block_id as usize];
+                let dest = self.blocks[block_id];
                 b.ins().jump(dest, &[]);
             }
             Instr::Branch {
@@ -211,8 +211,8 @@ impl<'f> CodegenContext<'f> {
                 else_block,
             } => {
                 let cond = self.get_value(b, cond);
-                b.ins().brnz(cond, self.blocks[then_block as usize], &[]);
-                b.ins().jump(self.blocks[else_block as usize], &[]);
+                b.ins().brnz(cond, self.blocks[then_block], &[]);
+                b.ins().jump(self.blocks[else_block], &[]);
             }
             Instr::Print(val) => {
                 let val = self.get_value(b, val);

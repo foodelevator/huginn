@@ -19,12 +19,12 @@ fn lex() {
     (
     ";
 
-    let mut d = vec![];
-    let tokens: Vec<_> = Lexer::new(input.chars().peekable(), 0, &mut d)
+    let mut lexer = Lexer::new(input.chars().peekable(), 0);
+    let tokens: Vec<_> = (&mut lexer)
         .map(|token| token.kind)
         .collect();
 
-    assert!(d.is_empty(), "{:?}", d);
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(
         tokens,
         vec![
@@ -52,12 +52,12 @@ fn lex() {
 
 #[test]
 fn parse_basic_arithmetic() {
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0, &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
+    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
+    let expr = parser.expr().unwrap();
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
         expr,
         Expr::BinaryOperation(box BinaryOperation {
@@ -83,12 +83,12 @@ fn parse_basic_arithmetic() {
         }),
     );
 
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable(), 0, &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
+    let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
+    let expr = parser.expr().unwrap();
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
         expr,
         Expr::BinaryOperation(box BinaryOperation {
@@ -104,12 +104,12 @@ fn parse_basic_arithmetic() {
         })
     );
 
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable(), 0, &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
+    let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
+    let expr = parser.expr().unwrap();
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
         expr,
         Expr::BinaryOperation(box BinaryOperation {
@@ -128,12 +128,12 @@ fn parse_basic_arithmetic() {
         })
     );
 
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable(), 0, &mut d1).peekable();
-    let expr = Parser::new(&mut lexer, &mut d2).expr().unwrap();
+    let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
+    let expr = parser.expr().unwrap();
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
     assert_matches!(
         expr,
         Expr::BinaryOperation(box BinaryOperation {
@@ -155,13 +155,12 @@ fn parse_basic_arithmetic() {
 
 #[test]
 fn lower_basic_arithmetic() {
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0, &mut d1).peekable();
-    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
     let proc = lower_expr(&expr);
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(proc.blocks.len(), 1);
     assert_matches!(
         &proc.blocks[0].instrs[..],
@@ -215,12 +214,11 @@ fn lower_basic_arithmetic() {
 }
 
 fn run_expr(code: &'static str) -> i64 {
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
-    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let mut lexer = Lexer::new(code.chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     let proc = lower_expr(&expr);
     let proc = resolve(&proc);
     codegen::run_jit(&proc)
@@ -250,12 +248,11 @@ fn variable_shadowing() {
         a := a + 2;
         return a;
     ";
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
-    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let mut lexer = Lexer::new(code.chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
     let block = parser.file();
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     let file = block.unwrap();
     let proc = lower_file(&file);
     let proc = resolve(&proc);
@@ -268,12 +265,11 @@ fn parse_block() {
         a := 2;
         print(a + a);
     }";
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
-    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let mut lexer = Lexer::new(code.chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
     let block = parser.block();
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     let block = block.unwrap();
     assert_matches!(
         &block.stmts[0],
@@ -308,12 +304,11 @@ fn parse_proc() {
             return a + b;
         };
     ";
-    let (mut d1, mut d2) = (vec![], vec![]);
-    let mut lexer = Lexer::new(code.chars().peekable(), 0, &mut d1).peekable();
-    let mut parser = Parser::new(&mut lexer, &mut d2);
+    let mut lexer = Lexer::new(code.chars().peekable(), 0);
+    let mut parser = Parser::new(&mut lexer);
     let file = parser.file();
-    assert!(d1.is_empty(), "{:?}", d1);
-    assert!(d2.is_empty(), "{:?}", d2);
+    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     let file = file.unwrap();
     assert_eq!(file.stmts.len(), 1);
     assert_matches!(

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{bitcode as bit, bytecode as byte};
+use crate::{bitcode as bit, bytecode as byte, Array};
 
 // bytecode -> bitcode
 // resolve names, types (haha), check which values are SSA, etc
@@ -19,7 +19,7 @@ pub fn resolve(proc: &byte::Procedure) -> bit::Procedure {
 
 struct Resolver<'a> {
     scope: HashMap<&'a str, u32>,
-    blocks: Vec<bit::Block>,
+    blocks: Array<bit::BlockId, bit::Block>,
     curr_block: bit::BlockId,
     values: HashMap<bit::Value, bit::ValueInfo>,
     local_count: u32,
@@ -29,7 +29,7 @@ impl<'a> Resolver<'a> {
     fn new() -> Self {
         Self {
             scope: HashMap::new(),
-            blocks: Vec::new(),
+            blocks: Array::default(),
             curr_block: 0,
             values: HashMap::new(),
             local_count: 0,
@@ -37,7 +37,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn proc(&mut self, proc: &'a byte::Procedure) {
-        for block in &proc.blocks {
+        for block in &*proc.blocks {
             self.block(block)
         }
     }
@@ -124,7 +124,7 @@ impl<'a> Resolver<'a> {
             | bit::Instr::Print(_)
             | bit::Instr::Return(_) => {}
         }
-        self.blocks[self.curr_block as usize].instrs.push(instr);
+        self.blocks[self.curr_block].instrs.push(instr);
     }
 }
 
