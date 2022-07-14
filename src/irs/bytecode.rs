@@ -3,6 +3,14 @@ use std::collections::HashMap;
 use crate::{common::{BinaryOperator, UnaryOperator}, Array};
 
 #[derive(Debug, Default)]
+pub struct Module {
+    pub procedures: Array<ProcedureId, Procedure>,
+    pub scope: HashMap<String, ProcedureId>,
+}
+
+pub type ProcedureId = u32;
+
+#[derive(Debug, Default)]
 pub struct Procedure {
     pub blocks: Array<BlockId, Block>,
 }

@@ -109,19 +109,24 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
         return Ok(());
     }
 
-    let proc = lower_file(&file);
+    let module = lower_file(&file);
 
     if mode == Mode::Bytecode {
-        for (i, block) in proc.blocks.iter().enumerate() {
-            println!("block{}:", i);
-            for instr in &block.instrs {
-                println!("    {:?}", instr);
+        for (name, &id) in &module.scope {
+            let proc = &module.procedures[id];
+
+            println!("procedure {}:", name);
+            for (i, block) in proc.blocks.iter().enumerate() {
+                println!("    block{}:", i);
+                for instr in &block.instrs {
+                    println!("        {:?}", instr);
+                }
             }
+            return Ok(());
         }
-        return Ok(());
     }
 
-    let proc = resolve(&proc);
+    let proc = resolve(&module);
 
     if mode == Mode::Bitcode {
         for (i, block) in proc.blocks.iter().enumerate() {

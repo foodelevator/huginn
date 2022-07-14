@@ -17,17 +17,27 @@ pub struct Array<I: TryInto<usize>, T> {
     _i: std::marker::PhantomData<I>,
 }
 
-impl<I: TryInto<usize>, T> Default for Array<I, T> {
-    fn default() -> Self {
+impl<I: TryInto<usize> + TryFrom<usize>, T> Array<I, T> {
+    pub fn new() -> Self {
         Self {
             v: Vec::default(),
             _i: std::marker::PhantomData,
         }
     }
+
+    pub fn len(&self) -> I {
+        unsafe { self.v.len().try_into().unwrap_unchecked() }
+    }
+}
+
+impl<I: TryInto<usize> + TryFrom<usize>, T> Default for Array<I, T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<I: TryInto<usize>, T> Array<I, T> {
-    fn enumerate<'a>(&self) -> Enumerate<I, T> {
+    fn enumerate(&self) -> Enumerate<I, T> {
         Enumerate { i: 0, v: self }
     }
 }

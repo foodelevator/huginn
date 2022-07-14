@@ -43,7 +43,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn block(&mut self, block: &'a byte::Block) {
-        self.curr_block = self.blocks.len() as bit::BlockId;
+        self.curr_block = self.blocks.len();
         self.blocks.push(bit::Block { instrs: Vec::new() });
         for instr in &block.instrs {
             self.instr(instr)

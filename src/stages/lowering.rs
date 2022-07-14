@@ -1,15 +1,45 @@
+use std::collections::HashMap;
+
 use crate::{
-    bytecode::{Block as BCBlock, BlockId, Procedure, Instr, Value},
+    bytecode::{Block as BCBlock, BlockId, Instr, Module, Procedure, Value},
     common::Ident,
     syntax_tree::{
-        Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Stmt,
+        Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Proc, Stmt,
         UnaryOperation, VarDecl, While,
-    }, Array,
+    },
+    Array,
 };
 
-pub fn lower_file(file: &File) -> Procedure {
-    let mut ctx = LoweringContext::new();
+pub fn lower_file(file: &File) -> Module {
+    let mut procedures = Array::new();
+    let mut scope = HashMap::new();
     for stmt in &file.stmts {
+        match stmt {
+            Stmt::VarDecl(VarDecl {
+                ident,
+                value: Expr::Proc(proc),
+                ..
+            }) => {
+                scope.insert(ident.name.clone(), procedures.len());
+                procedures.push(lower_proc(proc));
+            }
+
+            Stmt::Expr(_)
+            | Stmt::VarDecl(_)
+            | Stmt::Assign(_)
+            | Stmt::If(_)
+            | Stmt::While(_)
+            | Stmt::Print(_, _, _)
+            | Stmt::Return(_, _, _) => panic!(),
+        }
+    }
+
+    Module { procedures, scope }
+}
+
+pub fn lower_proc(proc: &Proc) -> Procedure {
+    let mut ctx = LoweringContext::new();
+    for stmt in &proc.body.stmts {
         ctx.stmt(stmt);
     }
 
@@ -18,9 +48,7 @@ pub fn lower_file(file: &File) -> Procedure {
     ctx.emit(Instr::Const { dest: ret, val: 0 });
     ctx.emit(Instr::Return(ret));
 
-    Procedure {
-        blocks: ctx.blocks,
-    }
+    Procedure { blocks: ctx.blocks }
 }
 
 pub fn lower_stmt(stmt: &Stmt) -> Procedure {
@@ -32,9 +60,7 @@ pub fn lower_stmt(stmt: &Stmt) -> Procedure {
     ctx.emit(Instr::Const { dest: ret, val: 0 });
     ctx.emit(Instr::Return(ret));
 
-    Procedure {
-        blocks: ctx.blocks,
-    }
+    Procedure { blocks: ctx.blocks }
 }
 
 pub fn lower_expr(expr: &Expr) -> Procedure {
@@ -43,9 +69,7 @@ pub fn lower_expr(expr: &Expr) -> Procedure {
     ctx.rval(expr, ret);
     ctx.emit(Instr::Return(ret));
 
-    Procedure {
-        blocks: ctx.blocks,
-    }
+    Procedure { blocks: ctx.blocks }
 }
 
 #[derive(Debug)]
@@ -82,7 +106,9 @@ impl LoweringContext {
                 let src = self.var();
                 self.rval(value, src);
 
-                self.emit(Instr::DefLocal { name: ident.name.clone() });
+                self.emit(Instr::DefLocal {
+                    name: ident.name.clone(),
+                });
                 self.emit(Instr::SymAssign {
                     name: ident.name.clone(),
                     src,
@@ -142,7 +168,7 @@ impl LoweringContext {
                 dest,
                 name: name.clone(),
             }),
-            Expr::Proc(_) => panic!("Cannot yet define procedure in this context"),
+            Expr::Proc(_) => panic!(),
         }
     }
 
@@ -247,7 +273,7 @@ impl LoweringContext {
     }
 
     fn switch_to_block(&mut self, id: BlockId) {
-        debug_assert!((id as usize) < self.blocks.len());
+        debug_assert!(id < self.blocks.len());
         self.curr_block = id;
     }
 
