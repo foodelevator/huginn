@@ -20,3 +20,19 @@ To build a static executable:
 $ cargo run build src/tests/fibonacci.hg
 $ ./a.out
 ```
+
+## Example fibonacci implementation
+
+```
+main := proc() {
+    a := 0;
+    b := 1;
+    while a <= 55 {
+        print(a);
+
+        c := a + b;
+        a = b;
+        b = c;
+    }
+};
+```
