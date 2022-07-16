@@ -1,11 +1,12 @@
 use crate::{
     common::{BinaryOperator, Ident, Span, UnaryOperator},
+    lexing::Lexer,
     syntax_tree::{
         Assign, BinaryOperation, Block, Expr, ExprStmt, File, Grouping, IfExpr, IfStmt, Proc, Stmt,
         UnaryOperation, VarDecl, While,
     },
     tokens::{Token, TokenKind},
-    Diagnostic, lexing::Lexer,
+    Diagnostic,
 };
 
 pub struct Parser<'i, I: Iterator<Item = char>> {
@@ -31,7 +32,10 @@ macro_rules! assert_next {
 
 impl<'i, I: Iterator<Item = char>> Parser<'i, I> {
     pub fn new(input: &'i mut Lexer<I>) -> Self {
-        Self { input, diagnostics: Vec::new() }
+        Self {
+            input,
+            diagnostics: Vec::new(),
+        }
     }
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
@@ -48,24 +52,30 @@ impl<'i, I: Iterator<Item = char>> Parser<'i, I> {
 
     pub fn block(&mut self) -> Option<Block> {
         let left_curly = assert_next!(self, TokenKind::LeftCurly)?;
-        let mut stmts = Vec::new();
-        loop {
-            match self.input.peek() {
-                Some(Token {
-                    kind: TokenKind::RightCurly,
-                    ..
-                }) => break,
-                _ => {
-                    stmts.push(self.stmt()?);
-                }
-            }
-        }
+        let stmts = self.stmts()?;
         let right_curly = assert_next!(self, TokenKind::RightCurly)?;
         Some(Block {
             left_curly,
             stmts,
             right_curly,
         })
+    }
+
+    pub fn stmts(&mut self) -> Option<Vec<Stmt>> {
+        let mut stmts = Vec::new();
+        loop {
+            match self.input.peek() {
+                Some(Token {
+                    kind: TokenKind::RightCurly,
+                    ..
+                })
+                | None => break,
+                _ => {
+                    stmts.push(self.stmt()?);
+                }
+            }
+        }
+        Some(stmts)
     }
 
     pub fn stmt(&mut self) -> Option<Stmt> {

@@ -1,14 +1,14 @@
 use std::assert_matches::assert_matches;
 
 use crate::{
+    analysis::analyze_proc,
     bytecode::Instr,
     codegen,
-    common::{BinaryOperator, Ident},
+    common::{BinaryOperator, Ident, Span},
     lexing::Lexer,
-    lowering::{lower_expr, lower_file},
-    resolution::resolve,
+    lowering::{lower_expr, lower_proc},
     parsing::Parser,
-    syntax_tree::{BinaryOperation, Expr, Grouping, Proc, Stmt, VarDecl},
+    syntax_tree::{BinaryOperation, Expr, Grouping, Proc, Stmt, VarDecl, Block},
     tokens::TokenKind,
 };
 
@@ -20,9 +20,7 @@ fn lex() {
     ";
 
     let mut lexer = Lexer::new(input.chars().peekable(), 0);
-    let tokens: Vec<_> = (&mut lexer)
-        .map(|token| token.kind)
-        .collect();
+    let tokens: Vec<_> = (&mut lexer).map(|token| token.kind).collect();
 
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(
@@ -55,7 +53,11 @@ fn parse_basic_arithmetic() {
     let mut lexer = Lexer::new("1 + 2 * 3 - 4 / 5".chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
     assert_matches!(
@@ -86,7 +88,11 @@ fn parse_basic_arithmetic() {
     let mut lexer = Lexer::new("1 * 2 + 3".chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
     assert_matches!(
@@ -107,7 +113,11 @@ fn parse_basic_arithmetic() {
     let mut lexer = Lexer::new("(1 + 2) * 3".chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
     assert_matches!(
@@ -131,7 +141,11 @@ fn parse_basic_arithmetic() {
     let mut lexer = Lexer::new("1 * (2 + 3)".chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(lexer.next(), None);
     assert_matches!(
@@ -159,7 +173,11 @@ fn lower_basic_arithmetic() {
     let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
     let proc = lower_expr(&expr);
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     assert_eq!(proc.blocks.len(), 1);
     assert_matches!(
@@ -217,10 +235,14 @@ fn run_expr(code: &'static str) -> i64 {
     let mut lexer = Lexer::new(code.chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let expr = parser.expr().unwrap();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     let proc = lower_expr(&expr);
-    let proc = resolve(&proc);
+    let proc = analyze_proc(&proc);
     codegen::run_jit(&proc)
 }
 
@@ -250,12 +272,25 @@ fn variable_shadowing() {
     ";
     let mut lexer = Lexer::new(code.chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
-    let block = parser.file();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    let stmts = parser.stmts();
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
-    let file = block.unwrap();
-    let proc = lower_file(&file);
-    let proc = resolve(&proc);
+    let stmts = stmts.unwrap();
+    let proc = Proc {
+        proc_span: Span::unknown(),
+        params: Vec::new(),
+        body: Block {
+            left_curly: Span::unknown(),
+            stmts,
+            right_curly: Span::unknown(),
+        },
+    };
+    let module = lower_proc(&proc, "".to_string());
+    let proc = analyze_proc(&module);
     assert_eq!(4, codegen::run_jit(&proc))
 }
 
@@ -268,7 +303,11 @@ fn parse_block() {
     let mut lexer = Lexer::new(code.chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let block = parser.block();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     let block = block.unwrap();
     assert_matches!(
@@ -307,7 +346,11 @@ fn parse_proc() {
     let mut lexer = Lexer::new(code.chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let file = parser.file();
-    assert!(parser.diagnostics().is_empty(), "{:?}", parser.diagnostics());
+    assert!(
+        parser.diagnostics().is_empty(),
+        "{:?}",
+        parser.diagnostics()
+    );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
     let file = file.unwrap();
     assert_eq!(file.stmts.len(), 1);

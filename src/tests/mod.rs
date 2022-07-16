@@ -13,7 +13,7 @@ fn print() {
     let mut lexer = Lexer::new(src.chars().peekable(), 0);
     let mut parser = Parser::new(&mut lexer);
     let file = parser.file().unwrap();
-    let proc = lower_file(&file);
+    let module = lower_file(&file);
 
     assert!(
         parser.diagnostics().is_empty(),
@@ -21,6 +21,12 @@ fn print() {
         parser.diagnostics()
     );
     assert!(lexer.diagnostics().is_empty(), "{:?}", lexer.diagnostics());
+
+    assert_eq!(module.scope.len(), 1);
+    assert_eq!(module.symbols.len(), 1);
+
+    let proc = &module.symbols[module.scope["main"]];
+
     assert_eq!(proc.blocks.len(), 1);
     assert_matches!(
         &proc.blocks[0].instrs[..],

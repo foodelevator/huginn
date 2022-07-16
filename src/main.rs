@@ -3,11 +3,11 @@ use std::io::stdin;
 use std::io::Read;
 use std::{env, fs, process};
 
+use huginn::analysis::analyze_mod;
 use huginn::lexing::Lexer;
 use huginn::link::link;
 use huginn::lowering::lower_file;
 use huginn::parsing::Parser;
-use huginn::resolution::resolve;
 use huginn::{codegen, Diagnostic};
 
 fn main() {
@@ -113,33 +113,36 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
 
     if mode == Mode::Bytecode {
         for (name, &id) in &module.scope {
-            let proc = &module.procedures[id];
+            let proc = &module.symbols[id];
 
             println!("procedure {}:", name);
             for (i, block) in proc.blocks.iter().enumerate() {
-                println!("    block{}:", i);
+                println!("  block{}:", i);
                 for instr in &block.instrs {
-                    println!("        {:?}", instr);
+                    println!("    {:?}", instr);
                 }
             }
-            return Ok(());
         }
+        return Ok(());
     }
 
-    let proc = resolve(&module);
+    let module = analyze_mod(&module);
 
     if mode == Mode::Bitcode {
-        for (i, block) in proc.blocks.iter().enumerate() {
-            println!("block{}:", i);
-            for instr in &block.instrs {
-                println!("    {:?}", instr);
+        for (id, proc) in module.procedures.enumerate() {
+            println!("procedure {}:", id);
+            for (i, block) in proc.blocks.iter().enumerate() {
+                println!("  block{}:", i);
+                for instr in &block.instrs {
+                    println!("    {:?}", instr);
+                }
             }
         }
         return Ok(());
     }
 
     if mode == Mode::Object || mode == Mode::Build {
-        let obj = codegen::build_object(&proc);
+        let obj = codegen::build_object(&module);
         if mode == Mode::Object {
             fs::write("output.o", obj)?;
         } else {
@@ -148,13 +151,13 @@ pub fn handle_file(mut input: impl Read, filename: &str, mode: Mode) -> Result<(
         return Ok(());
     }
 
-    if mode == Mode::Run {
-        let res = codegen::run_jit(&proc);
-        if res != 0 {
-            println!("{}", res);
-        }
-        return Ok(());
-    }
+    // if mode == Mode::Run {
+    //     let res = codegen::run_jit(&module);
+    //     if res != 0 {
+    //         println!("{}", res);
+    //     }
+    //     return Ok(());
+    // }
 
     unimplemented!("Someone missed something for mode {:?}", mode)
 }

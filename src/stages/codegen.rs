@@ -4,8 +4,8 @@ mod cl {
     pub use cranelift::{
         codegen::{
             ir::{
-                condcodes::IntCC, types::I64, AbiParam, Block, ExternalName, FuncRef, Function,
-                Signature, TrapCode, Value,
+                condcodes::IntCC, types::I64, AbiParam, Block, ExtFuncData, ExternalName, FuncRef,
+                Function, SigRef, Signature, TrapCode, Value,
             },
             isa, settings, Context,
         },
@@ -19,23 +19,16 @@ use cranelift::codegen::ir::InstBuilder as _;
 use cranelift_module::Module as _;
 
 use crate::{
-    bitcode::{Block, Instr, Procedure, Value, BlockId},
-    common::{BinaryOperator, UnaryOperator}, Array,
+    bitcode::{Block, BlockId, Instr, Module, Procedure, Value},
+    common::{BinaryOperator, UnaryOperator},
+    Array,
 };
 
-fn print_sig() -> cl::Signature {
+fn sig() -> cl::Signature {
     cl::Signature {
         params: vec![cl::AbiParam::new(cl::I64)],
-        returns: vec![],
-        call_conv: cl::isa::CallConv::SystemV,
-    }
-}
-
-fn main_sig() -> cl::Signature {
-    cl::Signature {
-        params: vec![],
         returns: vec![cl::AbiParam::new(cl::I64)],
-        call_conv: cl::isa::CallConv::Fast,
+        call_conv: cl::isa::CallConv::SystemV,
     }
 }
 
@@ -46,18 +39,20 @@ pub fn run_jit(bitcode_func: &Procedure) -> i64 {
 
     let mut jit_mod = cl::JITModule::new(builder);
 
-    let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), main_sig());
+    let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), sig());
+
+    let print_sig_ref = main_func.import_signature(sig());
 
     let main_id = jit_mod
         .declare_function("main", cl::Linkage::Export, &main_func.signature)
         .unwrap();
     let print_id = jit_mod
-        .declare_function("print", cl::Linkage::Import, &print_sig())
+        .declare_function("print", cl::Linkage::Import, &sig())
         .unwrap();
 
     let print_ref = jit_mod.declare_func_in_func(print_id, &mut main_func);
 
-    let codegen_context = CodegenContext::new(bitcode_func, print_ref);
+    let codegen_context = CodegenContext::new(bitcode_func, print_ref, print_sig_ref);
     codegen_context.gen_func(&mut main_func);
 
     let mut ctx = cl::Context::for_function(main_func);
@@ -79,7 +74,7 @@ pub fn run_jit(bitcode_func: &Procedure) -> i64 {
     result
 }
 
-pub fn build_object(bitcode_func: &Procedure) -> Vec<u8> {
+pub fn build_object(bitcode_mod: &Module) -> Vec<u8> {
     let target_isa = cl::isa::lookup_by_name("x86_64-linux")
         .unwrap()
         .finish(cl::settings::Flags::new(cl::settings::builder()))
@@ -94,22 +89,28 @@ pub fn build_object(bitcode_func: &Procedure) -> Vec<u8> {
         .unwrap(),
     );
 
-    let mut main_func = cl::Function::with_name_signature(cl::ExternalName::user(0, 0), main_sig());
-
-    let main_id = obj_mod
-        .declare_function("main", cl::Linkage::Export, &main_func.signature)
-        .unwrap();
     let print_id = obj_mod
-        .declare_function("print", cl::Linkage::Import, &print_sig())
+        .declare_function("print", cl::Linkage::Import, &sig())
         .unwrap();
 
-    let print_ref = obj_mod.declare_func_in_func(print_id, &mut main_func);
+    let mut ctx = cl::Context::new();
+    for (id, proc) in bitcode_mod.procedures.enumerate() {
+        let mut func = cl::Function::with_name_signature(cl::ExternalName::user(0, id), sig());
 
-    let codegen_context = CodegenContext::new(bitcode_func, print_ref);
-    codegen_context.gen_func(&mut main_func);
+        let func_id = obj_mod
+            .declare_function(&proc.name, cl::Linkage::Export, &func.signature)
+            .unwrap();
 
-    let mut ctx = cl::Context::for_function(main_func);
-    obj_mod.define_function(main_id, &mut ctx).unwrap();
+        let print_ref = obj_mod.declare_func_in_func(print_id, &mut func);
+        let print_sig_ref = func.import_signature(sig());
+
+        let codegen_ctx = CodegenContext::new(proc, print_ref, print_sig_ref);
+        codegen_ctx.gen_func(&mut func);
+
+        ctx.clear();
+        ctx.func = func;
+        obj_mod.define_function(func_id, &mut ctx).unwrap();
+    }
 
     let product = obj_mod.finish();
 
@@ -120,15 +121,17 @@ struct CodegenContext<'f> {
     blocks: Array<BlockId, cl::Block>,
     proc: &'f Procedure,
     values: HashMap<u32, cl::Value>,
+    sig_ref: cl::SigRef,
     print_func: cl::FuncRef,
 }
 
 impl<'f> CodegenContext<'f> {
-    pub fn new(proc: &'f Procedure, print_func: cl::FuncRef) -> Self {
+    pub fn new(proc: &'f Procedure, print_func: cl::FuncRef, sig_ref: cl::SigRef) -> Self {
         Self {
             blocks: Array::default(),
             proc,
             values: HashMap::new(),
+            sig_ref,
             print_func,
         }
     }
@@ -139,11 +142,14 @@ impl<'f> CodegenContext<'f> {
 
         self.declare_vars(&mut b);
 
-        for _ in &*self.proc.blocks {
+        for _ in self.proc.blocks.values() {
             self.blocks.push(b.create_block());
         }
 
         for (i, block) in self.proc.blocks.enumerate() {
+            if i == 0 {
+                b.append_block_params_for_function_params(self.blocks[i]);
+            }
             b.switch_to_block(self.blocks[i]);
             self.gen_block(&mut b, block);
         }
@@ -217,6 +223,9 @@ impl<'f> CodegenContext<'f> {
             Instr::Print(val) => {
                 let val = self.get_value(b, val);
                 b.ins().call(self.print_func, &[val]);
+
+                // let f = b.ins().func_addr(cl::I64, self.print_func);
+                // b.ins().call_indirect(self.sig_ref, f, &[val]);
             }
             Instr::Return(val) => {
                 let val = self.get_value(b, val);
@@ -305,7 +314,6 @@ impl<'f> CodegenContext<'f> {
         let info = self.proc.values.get(&value).copied().unwrap_or_default();
         match value {
             Value::Local(index) => Ok(cl::Variable::with_u32(index)),
-            // TODO: this works for now, but maybe there is a better solution
             Value::Temp(index) if info.writes > 1 => {
                 Ok(cl::Variable::with_u32(index + self.proc.local_count))
             }

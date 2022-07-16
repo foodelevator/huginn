@@ -11,17 +11,17 @@ use crate::{
 };
 
 pub fn lower_file(file: &File) -> Module {
-    let mut procedures = Array::new();
+    let mut symbols = Array::new();
     let mut scope = HashMap::new();
     for stmt in &file.stmts {
         match stmt {
             Stmt::VarDecl(VarDecl {
-                ident,
+                ident: Ident { name, .. },
                 value: Expr::Proc(proc),
                 ..
             }) => {
-                scope.insert(ident.name.clone(), procedures.len());
-                procedures.push(lower_proc(proc));
+                let proc = lower_proc(proc, name.clone());
+                scope.insert(name.clone(), symbols.push(proc));
             }
 
             Stmt::Expr(_)
@@ -34,10 +34,10 @@ pub fn lower_file(file: &File) -> Module {
         }
     }
 
-    Module { procedures, scope }
+    Module { symbols, scope }
 }
 
-pub fn lower_proc(proc: &Proc) -> Procedure {
+pub fn lower_proc(proc: &Proc, name: String) -> Procedure {
     let mut ctx = LoweringContext::new();
     for stmt in &proc.body.stmts {
         ctx.stmt(stmt);
@@ -48,7 +48,10 @@ pub fn lower_proc(proc: &Proc) -> Procedure {
     ctx.emit(Instr::Const { dest: ret, val: 0 });
     ctx.emit(Instr::Return(ret));
 
-    Procedure { blocks: ctx.blocks }
+    Procedure {
+        name,
+        blocks: ctx.blocks,
+    }
 }
 
 pub fn lower_stmt(stmt: &Stmt) -> Procedure {
@@ -60,7 +63,10 @@ pub fn lower_stmt(stmt: &Stmt) -> Procedure {
     ctx.emit(Instr::Const { dest: ret, val: 0 });
     ctx.emit(Instr::Return(ret));
 
-    Procedure { blocks: ctx.blocks }
+    Procedure {
+        name: "main".to_string(),
+        blocks: ctx.blocks,
+    }
 }
 
 pub fn lower_expr(expr: &Expr) -> Procedure {
@@ -69,7 +75,10 @@ pub fn lower_expr(expr: &Expr) -> Procedure {
     ctx.rval(expr, ret);
     ctx.emit(Instr::Return(ret));
 
-    Procedure { blocks: ctx.blocks }
+    Procedure {
+        name: "main".to_string(),
+        blocks: ctx.blocks,
+    }
 }
 
 #[derive(Debug)]
@@ -273,7 +282,7 @@ impl LoweringContext {
     }
 
     fn switch_to_block(&mut self, id: BlockId) {
-        debug_assert!(id < self.blocks.len());
+        debug_assert!(id < self.blocks.len() as BlockId);
         self.curr_block = id;
     }
 

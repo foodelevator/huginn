@@ -2,22 +2,28 @@ use std::collections::HashMap;
 
 use crate::{bitcode as bit, bytecode as byte, Array};
 
-// bytecode -> bitcode
-// resolve names, types (haha), check which values are SSA, etc
+pub fn analyze_mod(module: &byte::Module) -> bit::Module {
+    let mut procedures = Array::new();
+    for proc in module.symbols.values() {
+        procedures.push(analyze_proc(proc));
+    }
 
-pub fn resolve(proc: &byte::Procedure) -> bit::Procedure {
-    let mut r = Resolver::new();
+    bit::Module { procedures }
+}
 
-    r.proc(proc);
+pub fn analyze_proc(proc: &byte::Procedure) -> bit::Procedure {
+    let mut ctx = AnalyzingContext::new();
+    ctx.proc(proc);
 
     bit::Procedure {
-        blocks: r.blocks,
-        values: r.values,
-        local_count: r.local_count,
+        name: proc.name.to_string(),
+        blocks: ctx.blocks,
+        values: ctx.values,
+        local_count: ctx.local_count,
     }
 }
 
-struct Resolver<'a> {
+struct AnalyzingContext<'a> {
     scope: HashMap<&'a str, u32>,
     blocks: Array<bit::BlockId, bit::Block>,
     curr_block: bit::BlockId,
@@ -25,7 +31,7 @@ struct Resolver<'a> {
     local_count: u32,
 }
 
-impl<'a> Resolver<'a> {
+impl<'a> AnalyzingContext<'a> {
     fn new() -> Self {
         Self {
             scope: HashMap::new(),
@@ -37,14 +43,13 @@ impl<'a> Resolver<'a> {
     }
 
     fn proc(&mut self, proc: &'a byte::Procedure) {
-        for block in &*proc.blocks {
+        for block in proc.blocks.values() {
             self.block(block)
         }
     }
 
     fn block(&mut self, block: &'a byte::Block) {
-        self.curr_block = self.blocks.len();
-        self.blocks.push(bit::Block { instrs: Vec::new() });
+        self.curr_block = self.blocks.push(bit::Block { instrs: Vec::new() });
         for instr in &block.instrs {
             self.instr(instr)
         }
@@ -60,18 +65,18 @@ impl<'a> Resolver<'a> {
                 let dest = self.scope[&name[..]];
                 self.emit(bit::Instr::Mov {
                     dest: bit::Value::Local(dest),
-                    src: temp(*src),
+                    src: src.into(),
                 })
             }
             byte::Instr::SymbolVal { dest, name } => {
                 let src = self.scope[&name[..]];
                 self.emit(bit::Instr::Mov {
-                    dest: temp(*dest),
+                    dest: dest.into(),
                     src: bit::Value::Local(src),
                 })
             }
             &byte::Instr::Const { dest, val } => self.emit(bit::Instr::Const {
-                dest: temp(dest),
+                dest: dest.into(),
                 val,
             }),
             &byte::Instr::BinaryOperation {
@@ -80,9 +85,9 @@ impl<'a> Resolver<'a> {
                 rhs,
                 operator,
             } => self.emit(bit::Instr::BinaryOperation {
-                dest: temp(dest),
-                lhs: temp(lhs),
-                rhs: temp(rhs),
+                dest: dest.into(),
+                lhs: lhs.into(),
+                rhs: rhs.into(),
                 operator,
             }),
             &byte::Instr::UnaryOperation {
@@ -90,8 +95,8 @@ impl<'a> Resolver<'a> {
                 operand,
                 operator,
             } => self.emit(bit::Instr::UnaryOperation {
-                dest: temp(dest),
-                operand: temp(operand),
+                dest: dest.into(),
+                operand: operand.into(),
                 operator,
             }),
             &byte::Instr::Jump(block) => self.emit(bit::Instr::Jump(block)),
@@ -100,12 +105,12 @@ impl<'a> Resolver<'a> {
                 then_block,
                 else_block,
             } => self.emit(bit::Instr::Branch {
-                cond: temp(cond),
+                cond: cond.into(),
                 then_block,
                 else_block,
             }),
-            &byte::Instr::Print(val) => self.emit(bit::Instr::Print(temp(val))),
-            &byte::Instr::Return(val) => self.emit(bit::Instr::Return(temp(val))),
+            &byte::Instr::Print(val) => self.emit(bit::Instr::Print(val.into())),
+            &byte::Instr::Return(val) => self.emit(bit::Instr::Return(val.into())),
         }
     }
 
@@ -117,7 +122,7 @@ impl<'a> Resolver<'a> {
             | bit::Instr::UnaryOperation { dest, .. } => {
                 let info = self.values.entry(dest).or_default();
                 info.writes += 1;
-            },
+            }
 
             bit::Instr::Branch { .. }
             | bit::Instr::Jump(_)
@@ -128,6 +133,14 @@ impl<'a> Resolver<'a> {
     }
 }
 
-fn temp(val: byte::Value) -> bit::Value {
-    bit::Value::Temp(val)
+impl From<&byte::Value> for bit::Value {
+    fn from(val: &byte::Value) -> Self {
+        bit::Value::Temp(*val)
+    }
+}
+
+impl From<byte::Value> for bit::Value {
+    fn from(val: byte::Value) -> Self {
+        bit::Value::Temp(val)
+    }
 }

@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 
-use crate::{common::{BinaryOperator, UnaryOperator}, Array};
+use crate::{
+    common::{BinaryOperator, UnaryOperator},
+    Array,
+};
 
 #[derive(Debug, Default)]
 pub struct Module {
-    pub procedures: Array<ProcedureId, Procedure>,
-    pub scope: HashMap<String, ProcedureId>,
+    pub symbols: Array<SymbolId, Procedure>,
+    pub scope: HashMap<String, SymbolId>,
 }
 
-pub type ProcedureId = u32;
+pub type SymbolId = u32;
 
 #[derive(Debug, Default)]
 pub struct Procedure {
+    pub name: String,
     pub blocks: Array<BlockId, Block>,
 }
 

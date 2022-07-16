@@ -6,11 +6,21 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub struct Module {
+    pub procedures: Array<SymbolId, Procedure>,
+}
+
+pub type SymbolId = u32;
+
+#[derive(Debug, Clone)]
 pub struct Procedure {
+    pub name: String,
     pub blocks: Array<BlockId, Block>,
     pub values: HashMap<Value, ValueInfo>,
     pub local_count: u32,
 }
+
+pub type BlockId = u32;
 
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -58,5 +68,3 @@ pub enum Value {
 pub struct ValueInfo {
     pub writes: u16,
 }
-
-pub type BlockId = u32;
